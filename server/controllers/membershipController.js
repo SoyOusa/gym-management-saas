@@ -125,4 +125,78 @@ const updateMembership = async( req, res)=>{
         })
     }
 }
-module.exports = {createMembership, getMyMemberships, getMembershipById, updateMembership};
+
+//delete membership 
+
+const deleteMembership = async(req,res) =>{
+    try {
+        if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+            return res.status(400).json({
+                message: "Invalid membership ID",
+            });
+        };
+        const membership = await Membership.findOne({
+            _id: req.params.id,
+            user: req.user.id
+        })
+        if (!membership) {
+            return res.status(404).json({
+                message: "Membership not found"
+            });
+        }
+        await Membership.deleteOne({
+            _id: req.params.id,
+            user: req.user.id
+        });
+        res.status(200).json({
+            message:"Membership deleted successfully",
+        });
+    } catch (error) {
+        console.error("error deleting membership:", error);
+
+        res.status(500).json({
+            message: "Server error",
+        });
+    };
+}
+
+//cancel membership
+const cancelMembership = async (req, res)=> {
+    try {
+        if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+            return res.status(400).json({
+                message: "Invalid membership ID"
+            });
+        }
+        const membership = await Membership.findOne({
+            _id: req.params.id,
+            user: req.user.id
+        });
+        if (!membership) {
+            return res.status(404).json({
+                message: "Membership not found",
+            });
+        }
+        membership.status = "inactive";
+
+        await membership.save();
+        
+        return res.status(200).json({
+            message:"Membership cancelled successfully",
+            membership,
+        });
+    } catch (error) {
+        console.error("Error cancelling membership")
+        
+        res.status(500).json({
+            message:"Server error",
+        });
+    }
+};
+module.exports = {
+    createMembership, 
+    getMyMemberships, 
+    getMembershipById, 
+    updateMembership, 
+    deleteMembership,
+    cancelMembership};
