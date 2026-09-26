@@ -7,6 +7,7 @@ const authRoutes = require("./routes/authRoutes");
 const membershipRoutes = require("./routes/membershipRoutes");
 const userRoutes = require("./routes/userRoutes");
 const adminMembershipRoutes = require("./routes/adminMembershipRoutes");
+const adminRoutes = require("./routes/adminRoutes");
 
 
 dotenv.config();
@@ -24,6 +25,7 @@ app.use("/api/auth", authRoutes);
 app.use("/api/memberships", membershipRoutes);
 app.use("/api/users", userRoutes);
 app.use("/api/admin", adminMembershipRoutes);
+app.use("/api/admin", adminRoutes);
 
 app.get("/", (req,res) =>{
     res.json({
