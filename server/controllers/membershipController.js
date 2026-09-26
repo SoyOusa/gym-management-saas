@@ -6,7 +6,34 @@ const createMembership = async (req, res) => {
     try {
         console.log("Authenticated user:", req.user);
         const { membershipType, startDate, endDate } = req.body;
+        
+        //validate membership type 
 
+        if(!["basic","premium"].includes(membershipType)) {
+            return res.status(400).json({
+                message: "Membership type must be basic or premium",
+            });
+        }
+        //validate membership date
+        if (!startDate || !endDate) {
+            return res.status(400).json({
+                message:"Start date and end date are required",
+            });
+        }
+        const start = new Date(startDate);
+        const end = new Date(endDate);
+
+        if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+            return res.status(400).json({
+                message:"Start date and end date must be valid",
+            });
+        }
+        if (end <= start) {
+            return res.status(400).json({
+                message:"End date must be after start",
+            });
+        }
+        
         // validate required fields
         if ( !membershipType || !startDate || !endDate) {
             return res.status(400).json({

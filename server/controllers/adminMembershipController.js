@@ -63,7 +63,25 @@ const updateMembership = async (req, res) => {
             endDate,
             status,
         } = req.body;
-
+        
+        //validate membership status 
+        if (status !== undefined &&
+            !["active", "inactive", "expired"].includes(status)
+        ) {
+            return res.status(400).json({
+                message: "Status must be active, inactive, or expired",
+            });
+        }
+        //validate membership type 
+        if (
+            membershipType !== undefined &&
+            !["basic", "premium"].includes(membershipType)
+        ) {
+            return res.status(400).json({
+                message: "Membership type must be basic or premium",
+            });
+        }
+        
         const membership = await Membership.findById(req.params.id);
 
         if (!membership) {
@@ -71,6 +89,33 @@ const updateMembership = async (req, res) => {
                 message: "Membership not found",
             });
         }
+        //validate dates 
+
+        if (startDate !== undefined || endDate !== undefined) {
+            const newStartDate = startDate !== undefined
+                ? new Date(startDate)
+                : membership.startDate;
+
+            const newEndDate = endDate !== undefined
+                ? new Date(endDate)
+                : membership.endDate;
+
+            if (
+                Number.isNaN(new Date(newStartDate).getTime()) ||
+                Number.isNaN(new Date(newEndDate).getTime())
+            ) {
+                return res.status(400).json({
+                    message: "Start date and end date must be valid dates",
+                });
+            }
+
+            if (newEndDate <= newStartDate) {
+                return res.status(400).json({
+                    message: "End date must be after start date",
+                });
+            }
+        }
+
 
         if (membershipType !== undefined) {
             membership.membershipType = membershipType;
