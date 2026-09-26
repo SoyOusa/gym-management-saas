@@ -6,6 +6,8 @@ const connectDB = require("./config/db");
 const authRoutes = require("./routes/authRoutes");
 const membershipRoutes = require("./routes/membershipRoutes");
 const userRoutes = require("./routes/userRoutes");
+const adminMembershipRoutes = require("./routes/adminMembershipRoutes");
+
 
 dotenv.config();
 
@@ -21,6 +23,7 @@ app.use(express.json());
 app.use("/api/auth", authRoutes);
 app.use("/api/memberships", membershipRoutes);
 app.use("/api/users", userRoutes);
+app.use("/api/admin", adminMembershipRoutes);
 
 app.get("/", (req,res) =>{
     res.json({
