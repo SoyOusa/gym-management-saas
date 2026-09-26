@@ -69,6 +69,18 @@ const updateUser = async (req, res) => {
             role,
         } = req.body;
 
+        if (email !== undefined) {
+            const existingUser = await User.findOne({
+                email,
+                _id: {$ne: req.params.id},
+            });
+            if (existingUser) {
+                return res.status(409).json({
+                    message: "Email is already in use",
+                });
+            }
+        }
+
         const user = await User.findById(req.params.id);
 
         if (!user) {
