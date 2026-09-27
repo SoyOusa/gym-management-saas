@@ -66,6 +66,18 @@ const getMyMemberships = async (req, res) => {
         const memberships = await Membership.find({
             user: req.user.id,
         });
+
+        const now = new Date();
+
+        for (const membership of memberships) {
+            if (
+                membership.status === "active" && 
+                membership.endDate < now
+            ) {
+                membership.status = "expired";
+                await membership.save();
+            }
+        }
         res.status(200).json({memberships});
     } catch (error) {
         console.error("Error fetching membership", error),
