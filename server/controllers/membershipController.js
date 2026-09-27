@@ -33,6 +33,20 @@ const createMembership = async (req, res) => {
                 message:"End date must be after start",
             });
         }
+
+        //validate to prevent a member from creating a new membership that overlaps an existing active membership 
+        const existingActiveMembership = await Membership.findOne({
+            user: req.user.id,
+            status: "active",
+            startDate: { $lt: end },
+            endDate: { $gt: start },
+        });
+
+        if (existingActiveMembership) {
+            return res.status(400).json({
+                message: "You already have an active membership during this period",
+            });
+        }
         
         // validate required fields
         if ( !membershipType || !startDate || !endDate) {
@@ -128,16 +142,54 @@ const updateMembership = async( req, res)=>{
         }
         const {membershipType, startDate, endDate, status} = req.body;
 
+        if (
+            membershipType !== undefined &&
+            !["basic", "premium"].includes(membershipType)
+        ) {
+            return res.status(400).json({
+                message: "Membership type must be basic or premium",
+            });
+        }
+
+        if (status !== undefined) {
+            return res.status(400).json({
+                message: "Status cannot be changed through this endpoint",
+            });
+        }
         const membership = await Membership.findOne({
             _id: req.params.id,
             user: req.user.id,
         });
 
+        
         if (!membership) {
             return res.status(404).json({
                 message: "Membership not found",
             });
         }
+
+
+        const newStartDate =
+            startDate !== undefined ? new Date(startDate) : membership.startDate;
+
+        const newEndDate =
+            endDate !== undefined ? new Date(endDate) : membership.endDate;
+
+        if (
+            Number.isNaN(newStartDate.getTime()) ||
+            Number.isNaN(newEndDate.getTime())
+        ) {
+            return res.status(400).json({
+                message: "Start date and end date must be valid dates",
+            });
+        }
+
+        if (newEndDate <= newStartDate) {
+            return res.status(400).json({
+                message: "End date must be after start date",
+            });
+        }
+    
         if (membershipType !== undefined) {
             membership.membershipType = membershipType;
         }
@@ -147,9 +199,7 @@ const updateMembership = async( req, res)=>{
         if (endDate !== undefined) {
             membership.endDate = endDate;
         }
-        if (status !== undefined) {
-            membership.status = status;
-        }
+
         await membership.save();
 
         res.status(200).json({
@@ -216,6 +266,13 @@ const cancelMembership = async (req, res)=> {
                 message: "Membership not found",
             });
         }
+
+        if (membership.status !== "active") {
+            return res.status(400).json({
+                message: `Membership is already ${membership.status}`,
+            });
+        }
+
         membership.status = "inactive";
 
         await membership.save();
