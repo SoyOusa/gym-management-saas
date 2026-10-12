@@ -1,6 +1,8 @@
 const GymClass = require("../models/Class");
 const User = require("../models/User");
 const mongoose = require("mongoose");
+const Enrollment = require("../models/Enrollment");
+
 
 const createClass = async (req, res)=>{
     try {
@@ -193,9 +195,19 @@ const updateClass = async(req, res) => {
         }
 
         if (capacity !== undefined) {
-            if (capacity < 1) {
+            if (!Number.isInteger(capacity) || capacity < 1) {
                 return res.status(400).json({
-                    message: "Capacity must be at least 1",
+                    message: "Capacity must be a positive integer",
+                });
+            }
+
+            const enrollmentCount = await Enrollment.countDocuments({
+                gymClass: gymClass._id,
+            });
+
+            if (capacity < enrollmentCount) {
+                return res.status(400).json({
+                    message: `Cannot reduce capacity below ${enrollmentCount} enrolled members`,
                 });
             }
 
@@ -233,6 +245,16 @@ const deleteClass = async (req, res) => {
         if (!gymClass) {
             return res.status(404).json({
                 message: "Class not found",
+            });
+        }
+
+        const enrollmentCount = await Enrollment.countDocuments({
+            gymClass: gymClass._id,
+        });
+
+        if (enrollmentCount > 0) {
+            return res.status(400).json({
+                message: "Cannot delete a class with existing enrollments",
             });
         }
 
