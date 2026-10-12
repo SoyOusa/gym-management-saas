@@ -22,6 +22,22 @@ const enrollInClass = async(req, res) => {
             });
         }
 
+        // Combine the class date and start time
+        const classStart = new Date(gymClass.date);
+
+        const [hours, minutes] = gymClass.startTime
+            .split(":")
+            .map(Number);
+
+        classStart.setUTCHours(hours, minutes, 0, 0);
+
+        // Prevent enrollment after the class has started
+        if (classStart <= new Date()) {
+            return res.status(400).json({
+                message: "Cannot enroll in a class that has already started",
+            });
+        }
+
         const existingEnrollment = await Enrollment.findOne({
             member: req.user.id,
             gymClass: classId,
@@ -111,7 +127,7 @@ const cancelEnrollment = async(req, res) => {
                 message:"Invalid enrollment ID"
             });
         }
-        const enrollment = await Enrollment.FindOne({
+        const enrollment = await Enrollment.findOne({
             _id: req.params.id,
             member: req.user.id
         });
