@@ -10,7 +10,7 @@ const adminMembershipRoutes = require("./routes/adminMembershipRoutes");
 const adminRoutes = require("./routes/adminRoutes");
 const classRoutes = require("./routes/classRoutes");
 const enrollmentRoutes = require("./routes/enrollmentRoutes");
-
+const attendanceRoutes = require("./routes/attendanceRoutes");
 
 dotenv.config();
 
@@ -30,6 +30,7 @@ app.use("/api/admin", adminMembershipRoutes);
 app.use("/api/admin", adminRoutes);
 app.use("/api/classes", classRoutes);
 app.use("/api/enrollments", enrollmentRoutes);
+app.use("/api/attendance", attendanceRoutes);
 
 app.get("/", (req,res) =>{
     res.json({
