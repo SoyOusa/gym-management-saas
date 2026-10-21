@@ -11,6 +11,7 @@ const adminRoutes = require("./routes/adminRoutes");
 const classRoutes = require("./routes/classRoutes");
 const enrollmentRoutes = require("./routes/enrollmentRoutes");
 const attendanceRoutes = require("./routes/attendanceRoutes");
+const paymentRoutes = require("./routes/paymentRoutes");
 
 dotenv.config();
 
@@ -31,7 +32,8 @@ app.use("/api/admin", adminRoutes);
 app.use("/api/classes", classRoutes);
 app.use("/api/enrollments", enrollmentRoutes);
 app.use("/api/attendance", attendanceRoutes);
-
+app.use("/api/payments", paymentRoutes);
+  
 app.get("/", (req,res) =>{
     res.json({
         message: "GYM Management API is running"

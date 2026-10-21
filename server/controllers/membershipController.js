@@ -289,10 +289,13 @@ const cancelMembership = async (req, res)=> {
         });
     }
 };
+
+
 module.exports = {
     createMembership, 
     getMyMemberships, 
     getMembershipById, 
     updateMembership, 
     deleteMembership,
-    cancelMembership};
+    cancelMembership,
+};
