@@ -13,6 +13,7 @@ const enrollmentRoutes = require("./routes/enrollmentRoutes");
 const attendanceRoutes = require("./routes/attendanceRoutes");
 const paymentRoutes = require("./routes/paymentRoutes");
 const dashboardRoutes = require("./routes/dashboardRoutes")
+const { expireMemberships } = require("./services/membershipExpirationService");
 
 dotenv.config();
 
@@ -20,7 +21,32 @@ const app = express();
 
 const PORT = process.env.PORT || 5000;
 
-connectDB();
+const initializeDatabase = async () => {
+    try {
+        await connectDB();
+
+        // Check immediately after connecting
+        await expireMemberships();
+
+        // Check every hour
+        setInterval(async () => {
+            try {
+                await expireMemberships();
+            } catch (error) {
+                console.error("Scheduled expiration check failed:", error);
+            }
+        }, 60 * 60 * 1000);
+
+        console.log("Membership expiration scheduler started");
+
+    } catch (error) {
+        console.error("Database initialization error:", error);
+        process.exit(1);
+    }
+};
+
+
+initializeDatabase();
 
 app.use(cors());
 app.use(express.json());
