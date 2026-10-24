@@ -290,6 +290,88 @@ const cancelMembership = async (req, res)=> {
     }
 };
 
+// Renew an existing membership 
+const renewMembership = async (req,res) =>{
+    try {
+        const {id} = req.params;
+        const {months} = req.body;
+
+        if (!mongoose.Types.ObjectId.isValid(id)) {
+            return res.status(400).json({
+                message: "Invalid membership ID",
+            });
+        }
+        
+        if (!Number.isInteger(months) || months < 1 || months > 12) {
+            return res.status(400).json({
+                message: "Months must be an integer between 1 and 12 ",
+            });
+        }
+
+        const membership = await Membership.findOne({
+            _id: id,
+            user: req.user.id,
+        });
+
+        if (!membership) {
+            return res.status(404).json({
+                message:"Membership not found",
+            });
+        }
+
+        if (membership.status ==="inactive") {
+            return res.status(400).json({
+                message: "Cancelled memberships cannot be renewed",
+            });
+        }
+
+        const now = new Date();
+        const isCurrentlyActive = 
+            membership.status ==="active" &&
+            membership.endDate > now;
+
+        const renewalStart = isCurrentlyActive 
+            ? new Date(membership.endDate)
+            : now;
+
+        const newEndDate = new Date(renewalStart);
+        const originalDay = newEndDate.getUTCDate();
+
+        //prevent month-end overflow, e.g. January 31 -> March 3
+        newEndDate.setUTCDate(1);
+        newEndDate.setUTCMonth(newEndDate.getUTCMonth() + months);
+
+        const lastDayOfTargetMonth = new Date(
+            Date.UTC(
+                newEndDate.getUTCFullYear(),
+                newEndDate.getUTCMonth() + 1,
+                0
+            )
+        ).getUTCDate();
+
+        newEndDate.setUTCDate(Math.min(originalDay, lastDayOfTargetMonth));
+
+        if(!isCurrentlyActive) {
+            membership.startDate = renewalStart;
+        }
+
+        membership.endDate = newEndDate;
+        membership.status = "active";
+
+        await membership.save();
+
+        return res.status(200).json({
+            message:"Membership renewed successfully",
+        });
+
+    } catch(error) {
+        console.error("Error renewing membership:", error)
+        
+        return res.status(500).json({
+            message:"Server Error",
+        })
+    }
+};
 
 module.exports = {
     createMembership, 
@@ -298,4 +380,5 @@ module.exports = {
     updateMembership, 
     deleteMembership,
     cancelMembership,
+    renewMembership,
 };

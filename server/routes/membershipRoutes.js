@@ -7,6 +7,7 @@ const {
     updateMembership,
     deleteMembership,
     cancelMembership,
+    renewMembership
 } = require("../controllers/membershipController");
 
 const router = express.Router();
@@ -18,6 +19,8 @@ router.get("/:id", protect, getMembershipById);
 
 router.patch("/:id", protect, updateMembership);
 router.patch("/:id/cancel", protect, cancelMembership);
+// Renew a membership
+router.patch("/:id/renew", protect, authorizeRoles("member"), renewMembership);
 
 router.delete("/:id", protect, deleteMembership);
 
