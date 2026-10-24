@@ -14,6 +14,27 @@ const paymentSchema = new mongoose.Schema(
             required: true,
         },
 
+        purpose: {
+            type: String,
+            enum: ["membership", "renewal"],
+            default: "membership",
+        },
+        
+        renewalMonths: {
+            type: Number,
+            min: 1, 
+            max: 12,
+            validate: {
+                validator: Number.isInteger,
+                message: "Renewal months must be an integer",
+            },
+        },
+
+        renewalAppliedAt: {
+            type: Date, 
+            default: null,
+        },
+
         amount: {
             type: Number,
             required: true,

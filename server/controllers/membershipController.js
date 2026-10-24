@@ -1,5 +1,7 @@
 const mongoose = require("mongoose");
 const Membership = require("../models/Membership");
+const membershipPlans = require("../config/membershipPlans");
+const Payment = require("../models/Payment");
 
 // Create a new membership
 const createMembership = async (req, res) => {
@@ -325,45 +327,46 @@ const renewMembership = async (req,res) =>{
             });
         }
 
-        const now = new Date();
-        const isCurrentlyActive = 
-            membership.status ==="active" &&
-            membership.endDate > now;
+        // Calculate renewal price using server-defined membership plans
+        const plan = membershipPlans[membership.membershipType];
 
-        const renewalStart = isCurrentlyActive 
-            ? new Date(membership.endDate)
-            : now;
-
-        const newEndDate = new Date(renewalStart);
-        const originalDay = newEndDate.getUTCDate();
-
-        //prevent month-end overflow, e.g. January 31 -> March 3
-        newEndDate.setUTCDate(1);
-        newEndDate.setUTCMonth(newEndDate.getUTCMonth() + months);
-
-        const lastDayOfTargetMonth = new Date(
-            Date.UTC(
-                newEndDate.getUTCFullYear(),
-                newEndDate.getUTCMonth() + 1,
-                0
-            )
-        ).getUTCDate();
-
-        newEndDate.setUTCDate(Math.min(originalDay, lastDayOfTargetMonth));
-
-        if(!isCurrentlyActive) {
-            membership.startDate = renewalStart;
+        if (!plan) {
+            return res.status(400).json({
+                message: "Invalid membership plan",
+            });
         }
 
-        membership.endDate = newEndDate;
-        membership.status = "active";
+        const renewalAmount = plan.monthlyPrice * months;
 
-        await membership.save();
-
-        return res.status(200).json({
-            message:"Membership renewed successfully",
+        // Prevent multiple pending renewals for the same membership
+        const existingPendingRenewal = await Payment.findOne({
+            membership: membership._id,
+            purpose: "renewal",
+            status: "pending",
         });
 
+        if (existingPendingRenewal) {
+            return res.status(409).json({
+                message: "A renewal payment is already pending for this membership",
+            });
+        }
+
+        // Create a pending renewal payment
+        const payment = await Payment.create({
+            member: req.user.id,
+            membership: membership._id,
+            purpose: "renewal",
+            renewalMonths: months,
+            amount: renewalAmount,
+            currency: plan.currency,
+            paymentMethod: "bank_transfer",
+            status: "pending",
+        });
+
+        return res.status(201).json({
+            message: "Renewal payment created successfully",
+            payment,
+        });
     } catch(error) {
         console.error("Error renewing membership:", error)
         
