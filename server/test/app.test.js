@@ -52,5 +52,30 @@ describe("Gym Management API", () => {
         expect(response.body).toEqual({
             message: "Unauthorized: no token provided",
         });
+
+        
+    });
+
+    test("Dashboard overview requires authentication", async () => {
+        const response = await request(app)
+            .get("/api/dashboard/overview");
+
+        expect(response.statusCode).toBe(401);
+
+        expect(response.body).toEqual({
+            message: "Unauthorized: no token provided",
+        });
+    });
+
+    test("Dashboard overview rejects invalid JWT", async () => {
+        const response = await request(app)
+            .get("/api/dashboard/overview")
+            .set("Authorization", "Bearer invalid-token");
+
+        expect(response.statusCode).toBe(401);
+
+        expect(response.body).toEqual({
+            message: "Unauthorized: invalid token",
+        });
     });
 });

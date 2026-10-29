@@ -27,6 +27,14 @@ jest.mock("../controllers/paymentController", () => ({
 const request = require("supertest");
 const jwt = require("jsonwebtoken");
 
+jest.mock("../controllers/dashboardController", () => ({
+    getDashboardOverview: jest.fn((req, res) => {
+        res.status(200).json({
+            message: "Mock dashboard overview",
+        });
+    }),
+}));
+
 jest.mock("../models/User", () => ({
     findById: jest.fn(),
 }));
@@ -342,6 +350,143 @@ describe("Role-based authorization", () => {
 
         expect(response.body).toEqual({
             message: "Forbidden: you do not have permission to access this resource",
+        });
+    });
+
+    test("Member cannot access admin dashboard", async () => {
+        const secret = "test-jwt-secret";
+        process.env.JWT_SECRET = secret;
+
+        const token = jwt.sign(
+            { id: "507f1f77bcf86cd799439022" },
+            secret
+        );
+
+        User.findById.mockReturnValue({
+            select: jest.fn().mockResolvedValue({
+                _id: "507f1f77bcf86cd799439022",
+                role: "member",
+                isActive: true,
+            }),
+        });
+
+        const response = await request(app)
+            .get("/api/dashboard/overview")
+            .set("Authorization", `Bearer ${token}`);
+
+        expect(response.statusCode).toBe(403);
+
+        expect(response.body).toEqual({
+            message: "Forbidden: you do not have permission to access this resource",
+        });
+    });
+
+    test("Trainer cannot access admin dashboard", async () => {
+        const secret = "test-jwt-secret";
+        process.env.JWT_SECRET = secret;
+
+        const token = jwt.sign(
+            { id: "507f1f77bcf86cd799439023" },
+            secret
+        );
+
+        User.findById.mockReturnValue({
+            select: jest.fn().mockResolvedValue({
+                _id: "507f1f77bcf86cd799439023",
+                role: "trainer",
+                isActive: true,
+            }),
+        });
+
+        const response = await request(app)
+            .get("/api/dashboard/overview")
+            .set("Authorization", `Bearer ${token}`);
+
+        expect(response.statusCode).toBe(403);
+
+        expect(response.body).toEqual({
+            message: "Forbidden: you do not have permission to access this resource",
+        });
+    });
+
+
+    test("Admin can access dashboard overview", async () => {
+        const secret = "test-jwt-secret";
+        process.env.JWT_SECRET = secret;
+
+        const token = jwt.sign(
+            { id: "507f1f77bcf86cd799439024" },
+            secret
+        );
+
+        User.findById.mockReturnValue({
+            select: jest.fn().mockResolvedValue({
+                _id: "507f1f77bcf86cd799439024",
+                role: "admin",
+                isActive: true,
+            }),
+        });
+
+        const response = await request(app)
+            .get("/api/dashboard/overview")
+            .set("Authorization", `Bearer ${token}`);
+
+        expect(response.statusCode).toBe(200);
+
+        expect(response.body).toEqual({
+            message: "Mock dashboard overview",
+        });
+    });
+
+    test("Inactive admin cannot access dashboard overview", async () => {
+        const secret = "test-jwt-secret";
+        process.env.JWT_SECRET = secret;
+
+        const token = jwt.sign(
+            { id: "507f1f77bcf86cd799439025" },
+            secret
+        );
+
+        User.findById.mockReturnValue({
+            select: jest.fn().mockResolvedValue({
+                _id: "507f1f77bcf86cd799439025",
+                role: "admin",
+                isActive: false,
+            }),
+        });
+
+        const response = await request(app)
+            .get("/api/dashboard/overview")
+            .set("Authorization", `Bearer ${token}`);
+
+        expect(response.statusCode).toBe(403);
+
+        expect(response.body).toEqual({
+            message: "Account is inactive",
+        });
+    });
+
+    test("Deleted admin cannot access dashboard overview", async () => {
+        const secret = "test-jwt-secret";
+        process.env.JWT_SECRET = secret;
+
+        const token = jwt.sign(
+            { id: "507f1f77bcf86cd799439026" },
+            secret
+        );
+
+        User.findById.mockReturnValue({
+            select: jest.fn().mockResolvedValue(null),
+        });
+
+        const response = await request(app)
+            .get("/api/dashboard/overview")
+            .set("Authorization", `Bearer ${token}`);
+
+        expect(response.statusCode).toBe(401);
+
+        expect(response.body).toEqual({
+            message: "Unauthorized: user not found",
         });
     });
 });
