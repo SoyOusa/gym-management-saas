@@ -33,4 +33,24 @@ describe("Gym Management API", () => {
             message:"Unauthorized: invalid token",
         })
     });
+
+    test("GET /api/payments should reject requests without a token", async () => {
+        const response = await request(app).get("/api/payments");
+
+        expect(response.statusCode).toBe(401);
+
+        expect(response.body).toEqual({
+            message: "Unauthorized: no token provided",
+        });
+    });
+
+    test("GET /api/payments/summary should reject requests without a token", async () => {
+        const response = await request(app).get("/api/payments/summary");
+
+        expect(response.statusCode).toBe(401);
+
+        expect(response.body).toEqual({
+            message: "Unauthorized: no token provided",
+        });
+    });
 });
