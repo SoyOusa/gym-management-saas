@@ -1,6 +1,7 @@
 const mongoose = require("mongoose");
 const Payment = require("../models/Payment");
 const Membership = require("../models/Membership");
+const calculateRenewalEndDate = require("../utils/membershipRenewal");
 
 const createPayment = async (req, res) => {
     try {
@@ -144,58 +145,126 @@ const getPaymentById = async (req, res) => {
 
 // Admin: Update payment status
 const updatePaymentStatus = async (req, res) => {
+    const {id} = req.params;
+    const {status} = req.body || {};
+
+
+    // Validate payment ID
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+        return res.status(400).json({
+            message: "Invalid payment ID",
+        });
+    }
+
+    // Validate new status
+    if (!["paid", "failed"].includes(status)) {
+        return res.status(400).json({
+            message: "Status must be paid or failed",
+        });
+    }
+
+    const session = await mongoose.startSession();
+
     try {
-        const { id } = req.params;
-        const { status } = req.body || {};
+        let updatedPayment;
 
-        // Validate payment ID
-        if (!mongoose.Types.ObjectId.isValid(id)) {
-            return res.status(400).json({
-                message: "Invalid payment ID",
-            });
-        }
+        await session.withTransaction(async () =>{
+            //Atoming claim the pending payment.
+            //Concurrent confirmatipns cannot both succeed.
+            const payment = await Payment.findOneAndUpdate(
+                {
+                    _id: id,
+                    status: "pending",
+                },
+                {
+                    $set: {
+                        status,
+                        paidAt: status ==="paid" ? new Date() : null,
+                    },
+                },
+                {
+                    new: true,
+                    session,
+                }
+            );
 
-        // Validate new status
-        if (!["paid", "failed"].includes(status)) {
-            return res.status(400).json({
-                message: "Status must be paid or failed",
-            });
-        }
+            if (!payment) {
+                const error = new Error(
+                    "Payment not found or already finalized"
+                );
+                error.statusCode = 400;
+                throw error;
+            }
+            
+            //Only paid renewal payments extend memberships.
 
-        // Find payment
-        const payment = await Payment.findById(id);
+            if ( 
+                status === "paid" &&
+                payment.purpose === "renewal"
+            ) {
+                if (
+                    !Number.isInteger(payment.renewalMonths) ||
+                    payment.renewalMonths < 1 ||
+                    payment.renewalMonths > 12 
+                ) {
+                    const error = new Error(
+                        "Invalid renewal months"
+                    );
+                    error.statusCode = 400;
+                    throw error;
+                }
 
-        if (!payment) {
-            return res.status(404).json({
-                message: "Payment not found",
-            });
-        }
+                const membership = await Membership.findById(
+                    payment.membership
+                ).session(session);
 
-        // Prevent changing finalized payments
-        if (payment.status !== "pending") {
-            return res.status(400).json({
-                message: "Only pending payments can be updated",
-            });
-        }
+                if(!membership) {
+                    const error = new Error(
+                        "Membership not found"
+                    );
+                    error.statusCode = 404;
+                    throw error;
+                }
 
-        payment.status = status;
+                if(membership.status === "inactive") {
+                    const error = new Error(
+                        "Inactive membership cannot be renewed"
+                    );
+                    error.statusCode = 400;
+                    throw error;
+                }
 
-        if (status === "paid") {
-            payment.paidAt = new Date();
-        }
+                membership.endDate = calculateRenewalEndDate(
+                    membership.endDate,
+                    payment.renewalMonths
+                );
 
-        await payment.save();
+                membership.status = "active";
 
+                await membership.save({session});
+
+                payment.renewalAppliedAt = new Date();
+                await payment.save({session});
+            }
+            updatedPayment = payment;
+
+        });
         return res.status(200).json({
             message: "Payment status updated successfully",
-            payment,
+            payment: updatedPayment,
+
         });
+        
     } catch (error) {
         console.error("Error updating payment status:", error);
 
-        return res.status(500).json({
-            message: "Server error",
+        return res.status(error.statusCode || 500).json({
+            message: error.statusCode 
+            ? error.message 
+            : "Server error",
         });
+    } finally {
+        await session.endSession();
     }
 };
 
