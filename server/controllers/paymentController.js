@@ -2,6 +2,8 @@ const mongoose = require("mongoose");
 const Payment = require("../models/Payment");
 const Membership = require("../models/Membership");
 const calculateRenewalEndDate = require("../utils/membershipRenewal");
+const membershipPlan = require("../config/membershipPlans");
+const membershipPlans = require("../config/membershipPlans");
 
 const createPayment = async (req, res) => {
     try {
@@ -183,7 +185,7 @@ const updatePaymentStatus = async (req, res) => {
                     },
                 },
                 {
-                    new: true,
+                    returnDocument: "after",
                     session,
                 }
             );
@@ -218,6 +220,15 @@ const updatePaymentStatus = async (req, res) => {
                     payment.membership
                 ).session(session);
 
+                //Ensure the payment belongs to the membership owner
+                if (payment.member.toString() !== membership.user.toString()) {
+                    const error = new Error(
+                        "Renewal payment member does not match membership owner"
+                    );
+                    error.statusCode = 400;
+                    throw error;
+                }
+
                 if(!membership) {
                     const error = new Error(
                         "Membership not found"
@@ -229,6 +240,28 @@ const updatePaymentStatus = async (req, res) => {
                 if(membership.status === "inactive") {
                     const error = new Error(
                         "Inactive membership cannot be renewed"
+                    );
+                    error.statusCode = 400;
+                    throw error;
+                }
+
+                //Validate renewal payment against the membership plan 
+                const plan = membershipPlans[membership.membershipType];
+
+                if(!plan) {
+                    const error = new Error("Invalid membership plan");
+                    error.statusCode = 400;
+                    throw error;
+                }
+
+                const expectedAmount = plan.monthlyPrice * payment.renewalMonths;
+
+                if(
+                    payment.amount !== expectedAmount || 
+                    payment.currency !== plan.currency 
+                ) {
+                    const error = new Error(
+                        "Renewal payment amount or currency does not match the membership plan"
                     );
                     error.statusCode = 400;
                     throw error;
@@ -256,7 +289,10 @@ const updatePaymentStatus = async (req, res) => {
         });
         
     } catch (error) {
-        console.error("Error updating payment status:", error);
+        if (!error.statusCode) {
+            console.error("Error updating payment status:", error);
+        }
+        
 
         return res.status(error.statusCode || 500).json({
             message: error.statusCode 
