@@ -1,23 +1,25 @@
-const express = require("express");
+// const express = require("express");
 const dotenv = require("dotenv");
-const cors = require("cors");
+// const cors = require("cors");
 
-const connectDB = require("./config/db");
-const authRoutes = require("./routes/authRoutes");
-const membershipRoutes = require("./routes/membershipRoutes");
-const userRoutes = require("./routes/userRoutes");
-const adminMembershipRoutes = require("./routes/adminMembershipRoutes");
-const adminRoutes = require("./routes/adminRoutes");
-const classRoutes = require("./routes/classRoutes");
-const enrollmentRoutes = require("./routes/enrollmentRoutes");
-const attendanceRoutes = require("./routes/attendanceRoutes");
-const paymentRoutes = require("./routes/paymentRoutes");
-const dashboardRoutes = require("./routes/dashboardRoutes")
-const { expireMemberships } = require("./services/membershipExpirationService");
+// const connectDB = require("./config/db");
+// const authRoutes = require("./routes/authRoutes");
+// const membershipRoutes = require("./routes/membershipRoutes");
+// const userRoutes = require("./routes/userRoutes");
+// const adminMembershipRoutes = require("./routes/adminMembershipRoutes");
+// const adminRoutes = require("./routes/adminRoutes");
+// const classRoutes = require("./routes/classRoutes");
+// const enrollmentRoutes = require("./routes/enrollmentRoutes");
+// const attendanceRoutes = require("./routes/attendanceRoutes");
+// const paymentRoutes = require("./routes/paymentRoutes");
+// const dashboardRoutes = require("./routes/dashboardRoutes")
+// const { expireMemberships } = require("./services/membershipExpirationService");
 
 dotenv.config();
 
-const app = express();
+const app = require("./app");
+const connectDB = require("./config/db");
+const { expireMemberships } = require("./services/membershipExpirationService");
 
 const PORT = process.env.PORT || 5000;
 
@@ -48,25 +50,25 @@ const initializeDatabase = async () => {
 
 initializeDatabase();
 
-app.use(cors());
-app.use(express.json());
+// app.use(cors());
+// app.use(express.json());
 
-app.use("/api/auth", authRoutes);
-app.use("/api/memberships", membershipRoutes);
-app.use("/api/users", userRoutes);
-app.use("/api/admin", adminMembershipRoutes);
-app.use("/api/admin", adminRoutes);
-app.use("/api/classes", classRoutes);
-app.use("/api/enrollments", enrollmentRoutes);
-app.use("/api/attendance", attendanceRoutes);
-app.use("/api/payments", paymentRoutes);
-app.use("/api/dashboard", dashboardRoutes);
+// app.use("/api/auth", authRoutes);
+// app.use("/api/memberships", membershipRoutes);
+// app.use("/api/users", userRoutes);
+// app.use("/api/admin", adminMembershipRoutes);
+// app.use("/api/admin", adminRoutes);
+// app.use("/api/classes", classRoutes);
+// app.use("/api/enrollments", enrollmentRoutes);
+// app.use("/api/attendance", attendanceRoutes);
+// app.use("/api/payments", paymentRoutes);
+// app.use("/api/dashboard", dashboardRoutes);
   
-app.get("/", (req,res) =>{
-    res.json({
-        message: "GYM Management API is running"
-    });
-});
+// app.get("/", (req,res) =>{
+//     res.json({
+//         message: "GYM Management API is running"
+//     });
+// });
 
 app.listen(PORT, ()=>{
     console.log(`Server running on port ${PORT}`);
