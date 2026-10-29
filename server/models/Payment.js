@@ -74,6 +74,19 @@ const paymentSchema = new mongoose.Schema(
     }
 );
 
+// Allow only one pending renewal per membership
+paymentSchema.index(
+    { membership: 1 },
+    {
+        unique: true,
+        partialFilterExpression: {
+            purpose: "renewal",
+            status: "pending",
+        },
+    }
+);
+
+
 const Payment = mongoose.model("Payment", paymentSchema);
 
 module.exports = Payment;

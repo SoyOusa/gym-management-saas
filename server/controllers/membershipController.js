@@ -306,7 +306,7 @@ const renewMembership = async (req,res) =>{
         
         if (!Number.isInteger(months) || months < 1 || months > 12) {
             return res.status(400).json({
-                message: "Months must be an integer between 1 and 12 ",
+                message: "Months must be an integer between 1 and 12",
             });
         }
 
@@ -368,11 +368,18 @@ const renewMembership = async (req,res) =>{
             payment,
         });
     } catch(error) {
-        console.error("Error renewing membership:", error)
+        //MongoDB unique index violation 
+        if (error.code === 11000) {
+            return res.status(409).json({
+                message: "A renewal payment is already pending for this membership",
+            });
+        }
+
+        console.error("Error renewing membership:", error);
         
         return res.status(500).json({
             message:"Server Error",
-        })
+        });
     }
 };
 
