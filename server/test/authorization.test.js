@@ -55,6 +55,34 @@ jest.mock("../controllers/membershipController", () => ({
     }),
 }));
 
+jest.mock("../controllers/classController", () => ({
+    createClass: jest.fn((req, res) => {
+        res.status(201).json({
+            message: "Mock class created",
+        });
+    }),
+
+    getAllClasses: jest.fn((req, res) => {
+        res.status(200).json({
+            classes: [],
+        });
+    }),
+
+    getClassById: jest.fn(),
+
+    updateClass: jest.fn((req, res) => {
+        res.status(200).json({
+            message: "Mock class updated",
+        });
+    }),
+
+    deleteClass: jest.fn((req, res) => {
+        res.status(200).json({
+            message: "Mock class deleted",
+        });
+    }),
+}));
+
 const User = require("../models/User");
 const app = require("../app");
 
@@ -652,6 +680,483 @@ describe("Role-based authorization", () => {
 
         expect(response.body).toEqual({
             message: "Mock membership renewal authorized",
+        });
+    });
+    test("Active member can view classes", async () => {
+        const secret = "test-jwt-secret";
+        process.env.JWT_SECRET = secret;
+
+        const userId = "507f1f77bcf86cd799439039";
+
+        const token = jwt.sign(
+            { id: userId },
+            secret
+        );
+
+        User.findById.mockReturnValue({
+            select: jest.fn().mockResolvedValue({
+                _id: userId,
+                role: "member",
+                isActive: true,
+            }),
+        });
+
+        const response = await request(app)
+            .get("/api/classes")
+            .set("Authorization", `Bearer ${token}`);
+
+        expect(response.statusCode).toBe(200);
+
+        expect(response.body).toEqual({
+            classes: [],
+        });
+    });
+
+    test("Active trainer can view classes", async () => {
+        const secret = "test-jwt-secret";
+        process.env.JWT_SECRET = secret;
+
+        const userId = "507f1f77bcf86cd799439040";
+
+        const token = jwt.sign(
+            { id: userId },
+            secret
+        );
+
+        User.findById.mockReturnValue({
+            select: jest.fn().mockResolvedValue({
+                _id: userId,
+                role: "trainer",
+                isActive: true,
+            }),
+        });
+
+        const response = await request(app)
+            .get("/api/classes")
+            .set("Authorization", `Bearer ${token}`);
+
+        expect(response.statusCode).toBe(200);
+
+        expect(response.body).toEqual({
+            classes: [],
+        });
+    });
+
+    test("Member cannot create classes", async () => {
+        const secret = "test-jwt-secret";
+        process.env.JWT_SECRET = secret;
+
+        const userId = "507f1f77bcf86cd799439041";
+
+        const token = jwt.sign(
+            { id: userId },
+            secret
+        );
+
+        User.findById.mockReturnValue({
+            select: jest.fn().mockResolvedValue({
+                _id: userId,
+                role: "member",
+                isActive: true,
+            }),
+        });
+
+        const response = await request(app)
+            .post("/api/classes")
+            .set("Authorization", `Bearer ${token}`)
+            .send({
+                name: "Yoga Class",
+            });
+
+        expect(response.statusCode).toBe(403);
+
+        expect(response.body).toEqual({
+            message: "Forbidden: you do not have permission to access this resource",
+        });
+    });
+
+    test("Trainer cannot create classes", async () => {
+        const secret = "test-jwt-secret";
+        process.env.JWT_SECRET = secret;
+
+        const userId = "507f1f77bcf86cd799439042";
+
+        const token = jwt.sign(
+            { id: userId },
+            secret
+        );
+
+        User.findById.mockReturnValue({
+            select: jest.fn().mockResolvedValue({
+                _id: userId,
+                role: "trainer",
+                isActive: true,
+            }),
+        });
+
+        const response = await request(app)
+            .post("/api/classes")
+            .set("Authorization", `Bearer ${token}`)
+            .send({
+                name: "Yoga Class",
+            });
+
+        expect(response.statusCode).toBe(403);
+
+        expect(response.body).toEqual({
+            message: "Forbidden: you do not have permission to access this resource",
+        });
+    });
+    test("Admin can create classes", async () => {
+        const secret = "test-jwt-secret";
+        process.env.JWT_SECRET = secret;
+
+        const userId = "507f1f77bcf86cd799439043";
+
+        const token = jwt.sign(
+            { id: userId },
+            secret
+        );
+
+        User.findById.mockReturnValue({
+            select: jest.fn().mockResolvedValue({
+                _id: userId,
+                role: "admin",
+                isActive: true,
+            }),
+        });
+
+        const response = await request(app)
+            .post("/api/classes")
+            .set("Authorization", `Bearer ${token}`)
+            .send({
+                name: "Yoga Class",
+            });
+
+        expect(response.statusCode).toBe(201);
+
+        expect(response.body).toEqual({
+            message: "Mock class created",
+        });
+    });
+
+    test("Inactive admin cannot create classes", async () => {
+        const secret = "test-jwt-secret";
+        process.env.JWT_SECRET = secret;
+
+        const userId = "507f1f77bcf86cd799439044";
+
+        const token = jwt.sign(
+            { id: userId },
+            secret
+        );
+
+        User.findById.mockReturnValue({
+            select: jest.fn().mockResolvedValue({
+                _id: userId,
+                role: "admin",
+                isActive: false,
+            }),
+        });
+
+        const response = await request(app)
+            .post("/api/classes")
+            .set("Authorization", `Bearer ${token}`)
+            .send({
+                name: "Yoga Class",
+            });
+
+        expect(response.statusCode).toBe(403);
+
+        expect(response.body).toEqual({
+            message: "Account is inactive",
+        });
+    });
+    test("Deleted admin cannot create classes", async () => {
+        const secret = "test-jwt-secret";
+        process.env.JWT_SECRET = secret;
+
+        const userId = "507f1f77bcf86cd799439045";
+
+        const token = jwt.sign(
+            { id: userId },
+            secret
+        );
+
+        User.findById.mockReturnValue({
+            select: jest.fn().mockResolvedValue(null),
+        });
+
+        const response = await request(app)
+            .post("/api/classes")
+            .set("Authorization", `Bearer ${token}`)
+            .send({
+                name: "Yoga Class",
+            });
+
+        expect(response.statusCode).toBe(401);
+
+        expect(response.body).toEqual({
+            message: "Unauthorized: user not found",
+        });
+    });
+
+    test("Member cannot delete classes", async () => {
+        const secret = "test-jwt-secret";
+        process.env.JWT_SECRET = secret;
+
+        const userId = "507f1f77bcf86cd799439046";
+        const classId = "507f1f77bcf86cd799439047";
+
+        const token = jwt.sign(
+            { id: userId },
+            secret
+        );
+
+        User.findById.mockReturnValue({
+            select: jest.fn().mockResolvedValue({
+                _id: userId,
+                role: "member",
+                isActive: true,
+            }),
+        });
+
+        const response = await request(app)
+            .delete(`/api/classes/${classId}`)
+            .set("Authorization", `Bearer ${token}`);
+
+        expect(response.statusCode).toBe(403);
+
+        expect(response.body).toEqual({
+            message: "Forbidden: you do not have permission to access this resource",
+        });
+    });
+
+    test("Trainer cannot delete classes", async () => {
+        const secret = "test-jwt-secret";
+        process.env.JWT_SECRET = secret;
+
+        const userId = "507f1f77bcf86cd799439048";
+        const classId = "507f1f77bcf86cd799439049";
+
+        const token = jwt.sign(
+            { id: userId },
+            secret
+        );
+
+        User.findById.mockReturnValue({
+            select: jest.fn().mockResolvedValue({
+                _id: userId,
+                role: "trainer",
+                isActive: true,
+            }),
+        });
+
+        const response = await request(app)
+            .delete(`/api/classes/${classId}`)
+            .set("Authorization", `Bearer ${token}`);
+
+        expect(response.statusCode).toBe(403);
+
+        expect(response.body).toEqual({
+            message: "Forbidden: you do not have permission to access this resource",
+        });
+    });
+
+    test("Admin can delete classes", async () => {
+        const secret = "test-jwt-secret";
+        process.env.JWT_SECRET = secret;
+
+        const userId = "507f1f77bcf86cd799439050";
+        const classId = "507f1f77bcf86cd799439051";
+
+        const token = jwt.sign(
+            { id: userId },
+            secret
+        );
+
+        User.findById.mockReturnValue({
+            select: jest.fn().mockResolvedValue({
+                _id: userId,
+                role: "admin",
+                isActive: true,
+            }),
+        });
+
+        const response = await request(app)
+            .delete(`/api/classes/${classId}`)
+            .set("Authorization", `Bearer ${token}`);
+
+        expect(response.statusCode).toBe(200);
+
+        expect(response.body).toEqual({
+            message: "Mock class deleted",
+        });
+    });
+
+    test("Member cannot update classes", async () => {
+        const secret = "test-jwt-secret";
+        process.env.JWT_SECRET = secret;
+
+        const userId = "507f1f77bcf86cd799439052";
+        const classId = "507f1f77bcf86cd799439053";
+
+        const token = jwt.sign(
+            { id: userId },
+            secret
+        );
+
+        User.findById.mockReturnValue({
+            select: jest.fn().mockResolvedValue({
+                _id: userId,
+                role: "member",
+                isActive: true,
+            }),
+        });
+
+        const response = await request(app)
+            .patch(`/api/classes/${classId}`)
+            .set("Authorization", `Bearer ${token}`)
+            .send({
+                name: "Updated Yoga Class",
+            });
+
+        expect(response.statusCode).toBe(403);
+
+        expect(response.body).toEqual({
+            message: "Forbidden: you do not have permission to access this resource",
+        });
+    });
+
+
+    test("Trainer cannot update classes", async () => {
+        const secret = "test-jwt-secret";
+        process.env.JWT_SECRET = secret;
+
+        const userId = "507f1f77bcf86cd799439054";
+        const classId = "507f1f77bcf86cd799439055";
+
+        const token = jwt.sign(
+            { id: userId },
+            secret
+        );
+
+        User.findById.mockReturnValue({
+            select: jest.fn().mockResolvedValue({
+                _id: userId,
+                role: "trainer",
+                isActive: true,
+            }),
+        });
+
+        const response = await request(app)
+            .patch(`/api/classes/${classId}`)
+            .set("Authorization", `Bearer ${token}`)
+            .send({
+                name: "Updated Yoga Class",
+            });
+
+        expect(response.statusCode).toBe(403);
+
+        expect(response.body).toEqual({
+            message: "Forbidden: you do not have permission to access this resource",
+        });
+    });
+
+    test("Admin can update classes", async () => {
+        const secret = "test-jwt-secret";
+        process.env.JWT_SECRET = secret;
+
+        const userId = "507f1f77bcf86cd799439056";
+        const classId = "507f1f77bcf86cd799439057";
+
+        const token = jwt.sign(
+            { id: userId },
+            secret
+        );
+
+        User.findById.mockReturnValue({
+            select: jest.fn().mockResolvedValue({
+                _id: userId,
+                role: "admin",
+                isActive: true,
+            }),
+        });
+
+        const response = await request(app)
+            .patch(`/api/classes/${classId}`)
+            .set("Authorization", `Bearer ${token}`)
+            .send({
+                name: "Updated Yoga Class",
+            });
+
+        expect(response.statusCode).toBe(200);
+
+        expect(response.body).toEqual({
+            message: "Mock class updated",
+        });
+    });
+    test("Inactive admin cannot update classes", async () => {
+        const secret = "test-jwt-secret";
+        process.env.JWT_SECRET = secret;
+
+        const userId = "507f1f77bcf86cd799439058";
+        const classId = "507f1f77bcf86cd799439059";
+
+        const token = jwt.sign(
+            { id: userId },
+            secret
+        );
+
+        User.findById.mockReturnValue({
+            select: jest.fn().mockResolvedValue({
+                _id: userId,
+                role: "admin",
+                isActive: false,
+            }),
+        });
+
+        const response = await request(app)
+            .patch(`/api/classes/${classId}`)
+            .set("Authorization", `Bearer ${token}`)
+            .send({
+                name: "Updated Yoga Class",
+            });
+
+        expect(response.statusCode).toBe(403);
+
+        expect(response.body).toEqual({
+            message: "Account is inactive",
+        });
+    });
+
+    test("Deleted admin cannot update classes", async () => {
+        const secret = "test-jwt-secret";
+        process.env.JWT_SECRET = secret;
+
+        const userId = "507f1f77bcf86cd799439060";
+        const classId = "507f1f77bcf86cd799439061";
+
+        const token = jwt.sign(
+            { id: userId },
+            secret
+        );
+
+        User.findById.mockReturnValue({
+            select: jest.fn().mockResolvedValue(null),
+        });
+
+        const response = await request(app)
+            .patch(`/api/classes/${classId}`)
+            .set("Authorization", `Bearer ${token}`)
+            .send({
+                name: "Updated Yoga Class",
+            });
+
+        expect(response.statusCode).toBe(401);
+
+        expect(response.body).toEqual({
+            message: "Unauthorized: user not found",
         });
     });
 });

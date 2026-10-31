@@ -128,4 +128,28 @@ describe("Gym Management API", () => {
             message: "Unauthorized: invalid token",
         });
     });
+
+    test("Unauthenticated user cannot access classes", async () => {
+        const response = await request(app)
+            .get("/api/classes");
+
+        expect(response.statusCode).toBe(401);
+
+        expect(response.body).toEqual({
+            message: "Unauthorized: no token provided",
+        });
+    });
+
+    test("Invalid token cannot access classes", async () => {
+        const response = await request(app)
+            .get("/api/classes")
+            .set("Authorization", "Bearer invalid-token");
+
+        expect(response.statusCode).toBe(401);
+
+        expect(response.body).toEqual({
+            message: "Unauthorized: invalid token",
+        });
+    });
+
 });
