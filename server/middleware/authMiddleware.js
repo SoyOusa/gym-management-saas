@@ -1,19 +1,39 @@
+
 const jwt = require("jsonwebtoken");
 const User = require("../models/User");
 
-const protect = async(req, res, next) => {
-    try {
-        
-        const authHeader = req.headers.authorization;
+const protect = async (req, res, next) => {
+    const authHeader = req.headers.authorization;
 
-        if (!authHeader || !authHeader.startsWith("Bearer ")) {
-            return res.status(401).json({
-                message: "Unauthorized: no token provided",
-            });
-        }
-        const token = authHeader.split(" ")[1];
-        const decoded = jwt.verify(token, process.env.JWT_SECRET);
-        const user = await User.findById(decoded.id).select("-password");
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+        return res.status(401).json({
+            message: "Unauthorized: no token provided",
+        });
+    }
+
+    const token = authHeader.split(" ")[1];
+
+    if (!token) {
+        return res.status(401).json({
+            message: "Unauthorized: invalid token",
+        });
+    }
+
+    let decoded;
+
+    try {
+        decoded = jwt.verify(token, process.env.JWT_SECRET);
+    } catch (error) {
+        console.error("Authentication error:", error);
+
+        return res.status(401).json({
+            message: "Unauthorized: invalid token",
+        });
+    }
+
+    try {
+        const user = await User.findById(decoded.id)
+            .select("-password");
 
         if (!user) {
             return res.status(401).json({
@@ -32,25 +52,36 @@ const protect = async(req, res, next) => {
             role: user.role,
         };
 
-        next();
+        return next();
     } catch (error) {
-        console.error("Authentication error:", error);
-        res.status(401).json({
-            message: "Unauthorized: invalid token",
+        console.error("Authentication database error:", error);
+
+        return res.status(500).json({
+            message: "Server error",
         });
     }
 };
+
 const authorizeRoles = (...roles) => {
     return (req, res, next) => {
+        if (!req.user) {
+            return res.status(401).json({
+                message: "Unauthorized: authentication required",
+            });
+        }
 
         if (!roles.includes(req.user.role)) {
             return res.status(403).json({
-                message: "Forbidden: you do not have permission to access this resource",
+                message:
+                    "Forbidden: you do not have permission to access this resource",
             });
         }
-        next();
+
+        return next();
     };
 };
 
-module.exports = { protect, authorizeRoles };
-
+module.exports = {
+    protect,
+    authorizeRoles,
+};
