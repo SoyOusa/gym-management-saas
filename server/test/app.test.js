@@ -152,4 +152,33 @@ describe("Gym Management API", () => {
         });
     });
 
+    test("Unauthenticated user cannot enroll in classes", async () => {
+        const response = await request(app)
+            .post("/api/enrollments")
+            .send({
+                classId: "507f1f77bcf86cd799439062",
+            });
+
+        expect(response.statusCode).toBe(401);
+
+        expect(response.body).toEqual({
+            message: "Unauthorized: no token provided",
+        });
+    });
+
+    test("Invalid token cannot enroll in classes", async () => {
+        const response = await request(app)
+            .post("/api/enrollments")
+            .set("Authorization", "Bearer invalid-token")
+            .send({
+                classId: "507f1f77bcf86cd799439063",
+            });
+
+        expect(response.statusCode).toBe(401);
+
+        expect(response.body).toEqual({
+            message: "Unauthorized: invalid token",
+        });
+    });
+
 });

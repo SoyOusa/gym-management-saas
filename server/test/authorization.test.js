@@ -83,6 +83,45 @@ jest.mock("../controllers/classController", () => ({
     }),
 }));
 
+jest.mock("../controllers/enrollmentController", () => ({
+    enrollInClass: jest.fn((req, res) => {
+        res.status(201).json({
+            message: "Mock enrollment created",
+        });
+    }),
+
+    getMyEnrollments: jest.fn((req, res) => {
+        res.status(200).json({
+            enrollments: [],
+        });
+    }),
+
+    cancelEnrollment: jest.fn((req, res) => {
+        res.status(200).json({
+            message: "Mock enrollment cancelled",
+        });
+    }),
+
+    getAllEnrollments: jest.fn((req, res) => {
+        res.status(200).json({
+            enrollments: [],
+        });
+    }),
+
+    getEnrollmentSummary: jest.fn((req, res) => {
+        res.status(200).json({
+            totalEnrollments: 0,
+        });
+    }),
+        getEnrollmentById: jest.fn((req, res) => {
+        res.status(200).json({
+            enrollment: {
+                _id: req.params.id,
+            },
+        });
+    }),
+}));
+
 const User = require("../models/User");
 const app = require("../app");
 
@@ -1157,6 +1196,832 @@ describe("Role-based authorization", () => {
 
         expect(response.body).toEqual({
             message: "Unauthorized: user not found",
+        });
+    });
+
+    test("Active member can enroll in a class", async () => {
+        const secret = "test-jwt-secret";
+        process.env.JWT_SECRET = secret;
+
+        const userId = "507f1f77bcf86cd799439064";
+        const classId = "507f1f77bcf86cd799439065";
+
+        const token = jwt.sign(
+            { id: userId },
+            secret
+        );
+
+        User.findById.mockReturnValue({
+            select: jest.fn().mockResolvedValue({
+                _id: userId,
+                role: "member",
+                isActive: true,
+            }),
+        });
+
+        const response = await request(app)
+            .post("/api/enrollments")
+            .set("Authorization", `Bearer ${token}`)
+            .send({
+                classId: classId,
+            });
+
+        expect(response.statusCode).toBe(201);
+
+        expect(response.body).toEqual({
+            message: "Mock enrollment created",
+        });
+    });
+
+    test("Admin cannot enroll in classes as a member", async () => {
+        const secret = "test-jwt-secret";
+        process.env.JWT_SECRET = secret;
+
+        const userId = "507f1f77bcf86cd799439066";
+        const classId = "507f1f77bcf86cd799439067";
+
+        const token = jwt.sign(
+            { id: userId },
+            secret
+        );
+
+        User.findById.mockReturnValue({
+            select: jest.fn().mockResolvedValue({
+                _id: userId,
+                role: "admin",
+                isActive: true,
+            }),
+        });
+
+        const response = await request(app)
+            .post("/api/enrollments")
+            .set("Authorization", `Bearer ${token}`)
+            .send({
+                classId: classId,
+            });
+
+        expect(response.statusCode).toBe(403);
+
+        expect(response.body).toEqual({
+            message: "Forbidden: you do not have permission to access this resource",
+        });
+    });
+
+    test("Trainer cannot enroll in classes as a member", async () => {
+        const secret = "test-jwt-secret";
+        process.env.JWT_SECRET = secret;
+
+        const userId = "507f1f77bcf86cd799439068";
+        const classId = "507f1f77bcf86cd799439069";
+
+        const token = jwt.sign(
+            { id: userId },
+            secret
+        );
+
+        User.findById.mockReturnValue({
+            select: jest.fn().mockResolvedValue({
+                _id: userId,
+                role: "trainer",
+                isActive: true,
+            }),
+        });
+
+        const response = await request(app)
+            .post("/api/enrollments")
+            .set("Authorization", `Bearer ${token}`)
+            .send({
+                classId: classId,
+            });
+
+        expect(response.statusCode).toBe(403);
+
+        expect(response.body).toEqual({
+            message: "Forbidden: you do not have permission to access this resource",
+        });
+    });
+
+    test("Inactive member cannot enroll in classes", async () => {
+        const secret = "test-jwt-secret";
+        process.env.JWT_SECRET = secret;
+
+        const userId = "507f1f77bcf86cd799439070";
+        const classId = "507f1f77bcf86cd799439071";
+
+        const token = jwt.sign(
+            { id: userId },
+            secret
+        );
+
+        User.findById.mockReturnValue({
+            select: jest.fn().mockResolvedValue({
+                _id: userId,
+                role: "member",
+                isActive: false,
+            }),
+        });
+
+        const response = await request(app)
+            .post("/api/enrollments")
+            .set("Authorization", `Bearer ${token}`)
+            .send({
+                classId: classId,
+            });
+
+        expect(response.statusCode).toBe(403);
+
+        expect(response.body).toEqual({
+            message: "Account is inactive",
+        });
+    });
+
+    test("Deleted member cannot enroll in classes", async () => {
+        const secret = "test-jwt-secret";
+        process.env.JWT_SECRET = secret;
+
+        const userId = "507f1f77bcf86cd799439072";
+        const classId = "507f1f77bcf86cd799439073";
+
+        const token = jwt.sign(
+            { id: userId },
+            secret
+        );
+
+        User.findById.mockReturnValue({
+            select: jest.fn().mockResolvedValue(null),
+        });
+
+        const response = await request(app)
+            .post("/api/enrollments")
+            .set("Authorization", `Bearer ${token}`)
+            .send({
+                classId: classId,
+            });
+
+        expect(response.statusCode).toBe(401);
+
+        expect(response.body).toEqual({
+            message: "Unauthorized: user not found",
+        });
+    });
+    
+
+    test("Active member can view their enrollments", async () => {
+        const secret = "test-jwt-secret";
+        process.env.JWT_SECRET = secret;
+
+        const userId = "507f1f77bcf86cd799439074";
+
+        const token = jwt.sign(
+            { id: userId },
+            secret
+        );
+
+        User.findById.mockReturnValue({
+            select: jest.fn().mockResolvedValue({
+                _id: userId,
+                role: "member",
+                isActive: true,
+            }),
+        });
+
+        const response = await request(app)
+            .get("/api/enrollments")
+            .set("Authorization", `Bearer ${token}`);
+
+        expect(response.statusCode).toBe(200);
+
+        expect(response.body).toEqual({
+            enrollments: [],
+        });
+    });
+
+    test("Admin cannot access member-only enrollment history", async () => {
+        const secret = "test-jwt-secret";
+        process.env.JWT_SECRET = secret;
+
+        const userId = "507f1f77bcf86cd799439075";
+
+        const token = jwt.sign(
+            { id: userId },
+            secret
+        );
+
+        User.findById.mockReturnValue({
+            select: jest.fn().mockResolvedValue({
+                _id: userId,
+                role: "admin",
+                isActive: true,
+            }),
+        });
+
+        const response = await request(app)
+            .get("/api/enrollments")
+            .set("Authorization", `Bearer ${token}`);
+
+        expect(response.statusCode).toBe(403);
+
+        expect(response.body).toEqual({
+            message: "Forbidden: you do not have permission to access this resource",
+        });
+    });
+
+    test("Trainer cannot access member-only enrollment history", async () => {
+        const secret = "test-jwt-secret";
+        process.env.JWT_SECRET = secret;
+
+        const userId = "507f1f77bcf86cd799439076";
+
+        const token = jwt.sign(
+            { id: userId },
+            secret
+        );
+
+        User.findById.mockReturnValue({
+            select: jest.fn().mockResolvedValue({
+                _id: userId,
+                role: "trainer",
+                isActive: true,
+            }),
+        });
+
+        const response = await request(app)
+            .get("/api/enrollments")
+            .set("Authorization", `Bearer ${token}`);
+
+        expect(response.statusCode).toBe(403);
+
+        expect(response.body).toEqual({
+            message: "Forbidden: you do not have permission to access this resource",
+        });
+    });
+
+    test("Admin can view all enrollments", async () => {
+        const secret = "test-jwt-secret";
+        process.env.JWT_SECRET = secret;
+
+        const userId = "507f1f77bcf86cd799439077";
+
+        const token = jwt.sign(
+            { id: userId },
+            secret
+        );
+
+        User.findById.mockReturnValue({
+            select: jest.fn().mockResolvedValue({
+                _id: userId,
+                role: "admin",
+                isActive: true,
+            }),
+        });
+
+        const response = await request(app)
+            .get("/api/enrollments/all")
+            .set("Authorization", `Bearer ${token}`);
+
+        expect(response.statusCode).toBe(200);
+
+        expect(response.body).toEqual({
+            enrollments: [],
+        });
+    });
+
+    test("Member cannot view all enrollments", async () => {
+        const secret = "test-jwt-secret";
+        process.env.JWT_SECRET = secret;
+
+        const userId = "507f1f77bcf86cd799439078";
+
+        const token = jwt.sign(
+            { id: userId },
+            secret
+        );
+
+        User.findById.mockReturnValue({
+            select: jest.fn().mockResolvedValue({
+                _id: userId,
+                role: "member",
+                isActive: true,
+            }),
+        });
+
+        const response = await request(app)
+            .get("/api/enrollments/all")
+            .set("Authorization", `Bearer ${token}`);
+
+        expect(response.statusCode).toBe(403);
+
+        expect(response.body).toEqual({
+            message: "Forbidden: you do not have permission to access this resource",
+        });
+    });
+
+    test("Trainer cannot view all enrollments", async () => {
+        const secret = "test-jwt-secret";
+        process.env.JWT_SECRET = secret;
+
+        const userId = "507f1f77bcf86cd799439079";
+
+        const token = jwt.sign(
+            { id: userId },
+            secret
+        );
+
+        User.findById.mockReturnValue({
+            select: jest.fn().mockResolvedValue({
+                _id: userId,
+                role: "trainer",
+                isActive: true,
+            }),
+        });
+
+        const response = await request(app)
+            .get("/api/enrollments/all")
+            .set("Authorization", `Bearer ${token}`);
+
+        expect(response.statusCode).toBe(403);
+
+        expect(response.body).toEqual({
+            message: "Forbidden: you do not have permission to access this resource",
+        });
+    });
+
+    test("Admin can access enrollment summary", async () => {
+        const secret = "test-jwt-secret";
+        process.env.JWT_SECRET = secret;
+
+        const userId = "507f1f77bcf86cd799439080";
+
+        const token = jwt.sign(
+            { id: userId },
+            secret
+        );
+
+        User.findById.mockReturnValue({
+            select: jest.fn().mockResolvedValue({
+                _id: userId,
+                role: "admin",
+                isActive: true,
+            }),
+        });
+
+        const response = await request(app)
+            .get("/api/enrollments/summary")
+            .set("Authorization", `Bearer ${token}`);
+
+        expect(response.statusCode).toBe(200);
+
+        expect(response.body).toEqual({
+            totalEnrollments: 0,
+        });
+    });
+
+    test("Member cannot access enrollment summary", async () => {
+        const secret = "test-jwt-secret";
+        process.env.JWT_SECRET = secret;
+
+        const userId = "507f1f77bcf86cd799439081";
+
+        const token = jwt.sign(
+            { id: userId },
+            secret
+        );
+
+        User.findById.mockReturnValue({
+            select: jest.fn().mockResolvedValue({
+                _id: userId,
+                role: "member",
+                isActive: true,
+            }),
+        });
+
+        const response = await request(app)
+            .get("/api/enrollments/summary")
+            .set("Authorization", `Bearer ${token}`);
+
+        expect(response.statusCode).toBe(403);
+
+        expect(response.body).toEqual({
+            message: "Forbidden: you do not have permission to access this resource",
+        });
+    });
+
+    test("Trainer cannot access enrollment summary", async () => {
+        const secret = "test-jwt-secret";
+        process.env.JWT_SECRET = secret;
+
+        const userId = "507f1f77bcf86cd799439082";
+
+        const token = jwt.sign(
+            { id: userId },
+            secret
+        );
+
+        User.findById.mockReturnValue({
+            select: jest.fn().mockResolvedValue({
+                _id: userId,
+                role: "trainer",
+                isActive: true,
+            }),
+        });
+
+        const response = await request(app)
+            .get("/api/enrollments/summary")
+            .set("Authorization", `Bearer ${token}`);
+
+        expect(response.statusCode).toBe(403);
+
+        expect(response.body).toEqual({
+            message: "Forbidden: you do not have permission to access this resource",
+        });
+    });
+
+    test("Inactive admin cannot access enrollment summary", async () => {
+        const secret = "test-jwt-secret";
+        process.env.JWT_SECRET = secret;
+
+        const userId = "507f1f77bcf86cd799439083";
+
+        const token = jwt.sign(
+            { id: userId },
+            secret
+        );
+
+        User.findById.mockReturnValue({
+            select: jest.fn().mockResolvedValue({
+                _id: userId,
+                role: "admin",
+                isActive: false,
+            }),
+        });
+
+        const response = await request(app)
+            .get("/api/enrollments/summary")
+            .set("Authorization", `Bearer ${token}`);
+
+        expect(response.statusCode).toBe(403);
+
+        expect(response.body).toEqual({
+            message: "Account is inactive",
+        });
+    });
+
+
+    test("Deleted admin cannot access enrollment summary", async () => {
+        const secret = "test-jwt-secret";
+        process.env.JWT_SECRET = secret;
+
+        const userId = "507f1f77bcf86cd799439084";
+
+        const token = jwt.sign(
+            { id: userId },
+            secret
+        );
+
+        User.findById.mockReturnValue({
+            select: jest.fn().mockResolvedValue(null),
+        });
+
+        const response = await request(app)
+            .get("/api/enrollments/summary")
+            .set("Authorization", `Bearer ${token}`);
+
+        expect(response.statusCode).toBe(401);
+
+        expect(response.body).toEqual({
+            message: "Unauthorized: user not found",
+        });
+    });
+
+    test("Active member can view a specific enrollment", async () => {
+        const secret = "test-jwt-secret";
+        process.env.JWT_SECRET = secret;
+
+        const userId = "507f1f77bcf86cd799439085";
+        const enrollmentId = "507f1f77bcf86cd799439086";
+
+        const token = jwt.sign(
+            { id: userId },
+            secret
+        );
+
+        User.findById.mockReturnValue({
+            select: jest.fn().mockResolvedValue({
+                _id: userId,
+                role: "member",
+                isActive: true,
+            }),
+        });
+
+        const response = await request(app)
+            .get(`/api/enrollments/${enrollmentId}`)
+            .set("Authorization", `Bearer ${token}`);
+
+        expect(response.statusCode).toBe(200);
+
+        expect(response.body).toEqual({
+            enrollment: {
+                _id: enrollmentId,
+            },
+        });
+    });
+
+    test("Admin cannot access a specific member enrollment", async () => {
+        const secret = "test-jwt-secret";
+        process.env.JWT_SECRET = secret;
+
+        const userId = "507f1f77bcf86cd799439087";
+        const enrollmentId = "507f1f77bcf86cd799439086";
+
+        const token = jwt.sign(
+            { id: userId },
+            secret
+        );
+
+        User.findById.mockReturnValue({
+            select: jest.fn().mockResolvedValue({
+                _id: userId,
+                role: "admin",
+                isActive: true,
+            }),
+        });
+
+        const response = await request(app)
+            .get(`/api/enrollments/${enrollmentId}`)
+            .set("Authorization", `Bearer ${token}`);
+
+        expect(response.statusCode).toBe(403);
+
+        expect(response.body).toEqual({
+            message: "Forbidden: you do not have permission to access this resource",
+        });
+    });
+
+    test("Trainer cannot access a specific member enrollment", async () => {
+        const secret = "test-jwt-secret";
+        process.env.JWT_SECRET = secret;
+
+        const userId = "507f1f77bcf86cd799439088";
+        const enrollmentId = "507f1f77bcf86cd799439086";
+
+        const token = jwt.sign(
+            { id: userId },
+            secret
+        );
+
+        User.findById.mockReturnValue({
+            select: jest.fn().mockResolvedValue({
+                _id: userId,
+                role: "trainer",
+                isActive: true,
+            }),
+        });
+
+        const response = await request(app)
+            .get(`/api/enrollments/${enrollmentId}`)
+            .set("Authorization", `Bearer ${token}`);
+
+        expect(response.statusCode).toBe(403);
+
+        expect(response.body).toEqual({
+            message: "Forbidden: you do not have permission to access this resource",
+        });
+    });
+
+    test("Inactive member cannot access a specific enrollment", async () => {
+        const secret = "test-jwt-secret";
+        process.env.JWT_SECRET = secret;
+
+        const userId = "507f1f77bcf86cd799439089";
+        const enrollmentId = "507f1f77bcf86cd799439086";
+
+        const token = jwt.sign(
+            { id: userId },
+            secret
+        );
+
+        User.findById.mockReturnValue({
+            select: jest.fn().mockResolvedValue({
+                _id: userId,
+                role: "member",
+                isActive: false,
+            }),
+        });
+
+        const response = await request(app)
+            .get(`/api/enrollments/${enrollmentId}`)
+            .set("Authorization", `Bearer ${token}`);
+
+        expect(response.statusCode).toBe(403);
+
+        expect(response.body).toEqual({
+            message: "Account is inactive",
+        });
+    });
+
+    test("Deleted member cannot access a specific enrollment", async () => {
+        const secret = "test-jwt-secret";
+        process.env.JWT_SECRET = secret;
+
+        const userId = "507f1f77bcf86cd799439090";
+        const enrollmentId = "507f1f77bcf86cd799439086";
+
+        const token = jwt.sign(
+            { id: userId },
+            secret
+        );
+
+        User.findById.mockReturnValue({
+            select: jest.fn().mockResolvedValue(null),
+        });
+
+        const response = await request(app)
+            .get(`/api/enrollments/${enrollmentId}`)
+            .set("Authorization", `Bearer ${token}`);
+
+        expect(response.statusCode).toBe(401);
+
+        expect(response.body).toEqual({
+            message: "Unauthorized: user not found",
+        });
+    });
+
+    test("Active member can cancel an enrollment", async () => {
+        const secret = "test-jwt-secret";
+        process.env.JWT_SECRET = secret;
+
+        const userId = "507f1f77bcf86cd799439091";
+        const enrollmentId = "507f1f77bcf86cd799439086";
+
+        const token = jwt.sign(
+            { id: userId },
+            secret
+        );
+
+        User.findById.mockReturnValue({
+            select: jest.fn().mockResolvedValue({
+                _id: userId,
+                role: "member",
+                isActive: true,
+            }),
+        });
+
+        const response = await request(app)
+            .delete(`/api/enrollments/${enrollmentId}`)
+            .set("Authorization", `Bearer ${token}`);
+
+        expect(response.statusCode).toBe(200);
+
+        expect(response.body).toEqual({
+            message: "Mock enrollment cancelled",
+        });
+    });
+
+    test("Admin cannot cancel a member enrollment", async () => {
+        const secret = "test-jwt-secret";
+        process.env.JWT_SECRET = secret;
+
+        const userId = "507f1f77bcf86cd799439092";
+        const enrollmentId = "507f1f77bcf86cd799439086";
+
+        const token = jwt.sign(
+            { id: userId },
+            secret
+        );
+
+        User.findById.mockReturnValue({
+            select: jest.fn().mockResolvedValue({
+                _id: userId,
+                role: "admin",
+                isActive: true,
+            }),
+        });
+
+        const response = await request(app)
+            .delete(`/api/enrollments/${enrollmentId}`)
+            .set("Authorization", `Bearer ${token}`);
+
+        expect(response.statusCode).toBe(403);
+
+        expect(response.body).toEqual({
+            message: "Forbidden: you do not have permission to access this resource",
+        });
+    });
+
+    test("Trainer cannot cancel a member enrollment", async () => {
+        const secret = "test-jwt-secret";
+        process.env.JWT_SECRET = secret;
+
+        const userId = "507f1f77bcf86cd799439093";
+        const enrollmentId = "507f1f77bcf86cd799439086";
+
+        const token = jwt.sign(
+            { id: userId },
+            secret
+        );
+
+        User.findById.mockReturnValue({
+            select: jest.fn().mockResolvedValue({
+                _id: userId,
+                role: "trainer",
+                isActive: true,
+            }),
+        });
+
+        const response = await request(app)
+            .delete(`/api/enrollments/${enrollmentId}`)
+            .set("Authorization", `Bearer ${token}`);
+
+        expect(response.statusCode).toBe(403);
+
+        expect(response.body).toEqual({
+            message: "Forbidden: you do not have permission to access this resource",
+        });
+    });
+
+    test("Inactive member cannot cancel an enrollment", async () => {
+        const secret = "test-jwt-secret";
+        process.env.JWT_SECRET = secret;
+
+        const userId = "507f1f77bcf86cd799439094";
+        const enrollmentId = "507f1f77bcf86cd799439086";
+
+        const token = jwt.sign(
+            { id: userId },
+            secret
+        );
+
+        User.findById.mockReturnValue({
+            select: jest.fn().mockResolvedValue({
+                _id: userId,
+                role: "member",
+                isActive: false,
+            }),
+        });
+
+        const response = await request(app)
+            .delete(`/api/enrollments/${enrollmentId}`)
+            .set("Authorization", `Bearer ${token}`);
+
+        expect(response.statusCode).toBe(403);
+
+        expect(response.body).toEqual({
+            message: "Account is inactive",
+        });
+    });
+
+    test("Deleted member cannot cancel an enrollment", async () => {
+        const secret = "test-jwt-secret";
+        process.env.JWT_SECRET = secret;
+
+        const userId = "507f1f77bcf86cd799439095";
+        const enrollmentId = "507f1f77bcf86cd799439086";
+
+        const token = jwt.sign(
+            { id: userId },
+            secret
+        );
+
+        User.findById.mockReturnValue({
+            select: jest.fn().mockResolvedValue(null),
+        });
+
+        const response = await request(app)
+            .delete(`/api/enrollments/${enrollmentId}`)
+            .set("Authorization", `Bearer ${token}`);
+
+        expect(response.statusCode).toBe(401);
+
+        expect(response.body).toEqual({
+            message: "Unauthorized: user not found",
+        });
+    });
+
+
+    test("Unauthenticated user cannot cancel an enrollment", async () => {
+        const enrollmentId = "507f1f77bcf86cd799439086";
+
+        const response = await request(app)
+            .delete(`/api/enrollments/${enrollmentId}`);
+
+        expect(response.statusCode).toBe(401);
+
+        expect(response.body).toEqual({
+            message: "Unauthorized: no token provided",
+        });
+    });
+
+    test("Invalid JWT cannot cancel an enrollment", async () => {
+        const enrollmentId = "507f1f77bcf86cd799439086";
+
+        const response = await request(app)
+            .delete(`/api/enrollments/${enrollmentId}`)
+            .set("Authorization", "Bearer invalid-token");
+
+        expect(response.statusCode).toBe(401);
+
+        expect(response.body).toEqual({
+            message: "Unauthorized: invalid token",
         });
     });
 });
