@@ -39,6 +39,22 @@ jest.mock("../models/User", () => ({
     findById: jest.fn(),
 }));
 
+
+jest.mock("../controllers/membershipController", () => ({
+    createMembership: jest.fn(),
+    getMyMemberships: jest.fn(),
+    getMembershipById: jest.fn(),
+    updateMembership: jest.fn(),
+    deleteMembership: jest.fn(),
+    cancelMembership: jest.fn(),
+
+    renewMembership: jest.fn((req, res) => {
+        res.status(200).json({
+            message: "Mock membership renewal authorized",
+        });
+    }),
+}));
+
 const User = require("../models/User");
 const app = require("../app");
 
@@ -487,6 +503,155 @@ describe("Role-based authorization", () => {
 
         expect(response.body).toEqual({
             message: "Unauthorized: user not found",
+        });
+    });
+
+    test("Admin cannot access membership renewal", async () => {
+        const secret = "test-jwt-secret";
+        process.env.JWT_SECRET = secret;
+
+        const token = jwt.sign(
+            { id: "507f1f77bcf86cd799439028" },
+            secret
+        );
+
+        User.findById.mockReturnValue({
+            select: jest.fn().mockResolvedValue({
+                _id: "507f1f77bcf86cd799439028",
+                role: "admin",
+                isActive: true,
+            }),
+        });
+
+        const membershipId = "507f1f77bcf86cd799439029";
+
+        const response = await request(app)
+            .patch(`/api/memberships/${membershipId}/renew`)
+            .set("Authorization", `Bearer ${token}`);
+
+        expect(response.statusCode).toBe(403);
+
+        expect(response.body).toEqual({
+            message: "Forbidden: you do not have permission to access this resource",
+        });
+    });
+
+    test("Trainer cannot access membership renewal", async () => {
+        const secret = "test-jwt-secret";
+        process.env.JWT_SECRET = secret;
+
+        const token = jwt.sign(
+            { id: "507f1f77bcf86cd799439030" },
+            secret
+        );
+
+        User.findById.mockReturnValue({
+            select: jest.fn().mockResolvedValue({
+                _id: "507f1f77bcf86cd799439030",
+                role: "trainer",
+                isActive: true,
+            }),
+        });
+
+        const membershipId = "507f1f77bcf86cd799439031";
+
+        const response = await request(app)
+            .patch(`/api/memberships/${membershipId}/renew`)
+            .set("Authorization", `Bearer ${token}`);
+
+        expect(response.statusCode).toBe(403);
+
+        expect(response.body).toEqual({
+            message: "Forbidden: you do not have permission to access this resource",
+        });
+    });
+
+    test("Inactive member cannot renew membership", async () => {
+        const secret = "test-jwt-secret";
+        process.env.JWT_SECRET = secret;
+
+        const token = jwt.sign(
+            { id: "507f1f77bcf86cd799439033" },
+            secret
+        );
+
+        User.findById.mockReturnValue({
+            select: jest.fn().mockResolvedValue({
+                _id: "507f1f77bcf86cd799439033",
+                role: "member",
+                isActive: false,
+            }),
+        });
+
+        const membershipId = "507f1f77bcf86cd799439034";
+
+        const response = await request(app)
+            .patch(`/api/memberships/${membershipId}/renew`)
+            .set("Authorization", `Bearer ${token}`);
+
+        expect(response.statusCode).toBe(403);
+
+        expect(response.body).toEqual({
+            message: "Account is inactive",
+        });
+    });
+    
+    test("Deleted member cannot renew membership", async () => {
+        const secret = "test-jwt-secret";
+        process.env.JWT_SECRET = secret;
+
+        const token = jwt.sign(
+            { id: "507f1f77bcf86cd799439035" },
+            secret
+        );
+
+        User.findById.mockReturnValue({
+            select: jest.fn().mockResolvedValue(null),
+        });
+
+        const membershipId = "507f1f77bcf86cd799439036";
+
+        const response = await request(app)
+            .patch(`/api/memberships/${membershipId}/renew`)
+            .set("Authorization", `Bearer ${token}`);
+
+        expect(response.statusCode).toBe(401);
+
+        expect(response.body).toEqual({
+            message: "Unauthorized: user not found",
+        });
+    });
+
+    test("Active member can access membership renewal", async () => {
+        const secret = "test-jwt-secret";
+        process.env.JWT_SECRET = secret;
+
+        const token = jwt.sign(
+            { id: "507f1f77bcf86cd799439037" },
+            secret
+        );
+
+        User.findById.mockReturnValue({
+            select: jest.fn().mockResolvedValue({
+                _id: "507f1f77bcf86cd799439037",
+                role: "member",
+                isActive: true,
+            }),
+        });
+
+        const membershipId = "507f1f77bcf86cd799439038";
+
+        const response = await request(app)
+            .patch(`/api/memberships/${membershipId}/renew`)
+            .set("Authorization", `Bearer ${token}`);
+
+
+        console.log("Renewal status:", response.statusCode);
+        console.log("Renewal response:", response.body);
+        expect(response.statusCode).toBe(200);
+
+        expect(response.body).toEqual({
+            message: "Mock membership renewal authorized",
         });
     });
 });

@@ -78,4 +78,54 @@ describe("Gym Management API", () => {
             message: "Unauthorized: invalid token",
         });
     });
+
+    test("Membership list requires authentication", async () => {
+        const response = await request(app)
+            .get("/api/memberships");
+
+        expect(response.statusCode).toBe(401);
+
+        expect(response.body).toEqual({
+            message: "Unauthorized: no token provided",
+        });
+    });
+
+    test("Membership list rejects invalid JWT", async () => {
+        const response = await request(app)
+            .get("/api/memberships")
+            .set("Authorization", "Bearer invalid-token");
+
+        expect(response.statusCode).toBe(401);
+
+        expect(response.body).toEqual({
+            message: "Unauthorized: invalid token",
+        });
+    });
+
+    test("Membership renewal requires authentication", async () => {
+        const membershipId = "507f1f77bcf86cd799439027";
+
+        const response = await request(app)
+            .patch(`/api/memberships/${membershipId}/renew`);
+
+        expect(response.statusCode).toBe(401);
+
+        expect(response.body).toEqual({
+            message: "Unauthorized: no token provided",
+        });
+    });
+
+    test("Membership renewal rejects invalid JWT", async () => {
+        const membershipId = "507f1f77bcf86cd799439032";
+
+        const response = await request(app)
+            .patch(`/api/memberships/${membershipId}/renew`)
+            .set("Authorization", "Bearer invalid-token");
+
+        expect(response.statusCode).toBe(401);
+
+        expect(response.body).toEqual({
+            message: "Unauthorized: invalid token",
+        });
+    });
 });
