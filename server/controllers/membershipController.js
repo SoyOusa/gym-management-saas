@@ -134,88 +134,15 @@ const getMembershipById = async (req, res) =>{
 }
 
 //update membership 
-const updateMembership = async( req, res)=>{
-    try {
-        if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
-            return res.status(400).json({
-                message: "Invalid membership ID",
-            });
-        
-        }
-        const {membershipType, startDate, endDate, status} = req.body;
 
-        if (
-            membershipType !== undefined &&
-            !["basic", "premium"].includes(membershipType)
-        ) {
-            return res.status(400).json({
-                message: "Membership type must be basic or premium",
-            });
-        }
+const updateMembership = async (req, res) => {
+    return res.status(403).json({
+        message:
+            "Membership plan and dates cannot be changed directly. Please use the approved payment or admin process.",
+    });
+};
 
-        if (status !== undefined) {
-            return res.status(400).json({
-                message: "Status cannot be changed through this endpoint",
-            });
-        }
-        const membership = await Membership.findOne({
-            _id: req.params.id,
-            user: req.user.id,
-        });
-
-        
-        if (!membership) {
-            return res.status(404).json({
-                message: "Membership not found",
-            });
-        }
-
-
-        const newStartDate =
-            startDate !== undefined ? new Date(startDate) : membership.startDate;
-
-        const newEndDate =
-            endDate !== undefined ? new Date(endDate) : membership.endDate;
-
-        if (
-            Number.isNaN(newStartDate.getTime()) ||
-            Number.isNaN(newEndDate.getTime())
-        ) {
-            return res.status(400).json({
-                message: "Start date and end date must be valid dates",
-            });
-        }
-
-        if (newEndDate <= newStartDate) {
-            return res.status(400).json({
-                message: "End date must be after start date",
-            });
-        }
-    
-        if (membershipType !== undefined) {
-            membership.membershipType = membershipType;
-        }
-        if (startDate !== undefined) {
-            membership.startDate = startDate;
-        }
-        if (endDate !== undefined) {
-            membership.endDate = endDate;
-        }
-
-        await membership.save();
-
-        res.status(200).json({
-            message: "Membership updated successfully",
-            membership,
-        });
-    } catch (error) {
-        console.log("Error updating membership:", error);
-
-        res.status(500).json({
-            message:"Server Error",
-        })
-    }
-}
+   
 
 //delete membership 
 

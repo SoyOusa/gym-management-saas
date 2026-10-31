@@ -274,111 +274,79 @@ describe("Membership controller - getMembershipById", () => {
     });
 });
 
+
 describe("Membership controller - updateMembership", () => {
-    test("Rejects invalid membership ID", async () => {
-        const res = mockResponse();
+    const blockedMessage =
+        "Membership plan and dates cannot be changed directly. Please use the approved payment or admin process.";
 
-        await updateMembership(
-            mockRequest({ membershipType: "premium" }, "invalid"),
-            res
-        );
+    const updateRequests = [
+        {
+            name: "invalid membership ID",
+            id: "invalid-id",
+            body: { membershipType: "premium" },
+        },
+        {
+            name: "invalid membership type",
+            id: "507f1f77bcf86cd799439011",
+            body: { membershipType: "gold" },
+        },
+        {
+            name: "direct status change",
+            id: "507f1f77bcf86cd799439011",
+            body: { status: "active" },
+        },
+        {
+            name: "nonexistent membership ID",
+            id: "507f1f77bcf86cd799439099",
+            body: { membershipType: "premium" },
+        },
+        {
+            name: "invalid updated date",
+            id: "507f1f77bcf86cd799439011",
+            body: { endDate: "invalid-date" },
+        },
+        {
+            name: "end date before start date",
+            id: "507f1f77bcf86cd799439011",
+            body: {
+                startDate: "2026-12-31",
+                endDate: "2026-01-01",
+            },
+        },
+        {
+            name: "membership plan upgrade",
+            id: "507f1f77bcf86cd799439011",
+            body: { membershipType: "premium" },
+        },
+    ];
 
-        expect(res.status).toHaveBeenCalledWith(400);
-    });
+    test.each(updateRequests)(
+        "Blocks $name with 403",
+        async ({ id, body }) => {
+            const req = {
+                params: { id },
+                body,
+                user: {
+                    id: "507f1f77bcf86cd799439010",
+                    role: "member",
+                },
+            };
 
-    test("Rejects invalid membership type", async () => {
-        const res = mockResponse();
+            const res = {
+                status: jest.fn().mockReturnThis(),
+                json: jest.fn().mockReturnThis(),
+            };
 
-        await updateMembership(
-            mockRequest({ membershipType: "gold" }),
-            res
-        );
+            await updateMembership(req, res);
 
-        expect(res.status).toHaveBeenCalledWith(400);
-        expect(res.json).toHaveBeenCalledWith({
-            message: "Membership type must be basic or premium",
-        });
-    });
-
-    test("Prevents direct status changes", async () => {
-        const res = mockResponse();
-
-        await updateMembership(
-            mockRequest({ status: "active" }),
-            res
-        );
-
-        expect(res.status).toHaveBeenCalledWith(400);
-        expect(res.json).toHaveBeenCalledWith({
-            message: "Status cannot be changed through this endpoint",
-        });
-    });
-
-    test("Returns 404 when membership does not exist", async () => {
-        Membership.findOne.mockResolvedValue(null);
-
-        const res = mockResponse();
-        await updateMembership(
-            mockRequest({ membershipType: "premium" }),
-            res
-        );
-
-        expect(res.status).toHaveBeenCalledWith(404);
-    });
-
-    test("Rejects invalid updated date", async () => {
-        Membership.findOne.mockResolvedValue(
-            membershipDocument()
-        );
-
-        const res = mockResponse();
-        await updateMembership(
-            mockRequest({ startDate: "invalid-date" }),
-            res
-        );
-
-        expect(res.status).toHaveBeenCalledWith(400);
-        expect(res.json).toHaveBeenCalledWith({
-            message: "Start date and end date must be valid dates",
-        });
-    });
-
-    test("Rejects updated end date before start date", async () => {
-        Membership.findOne.mockResolvedValue(
-            membershipDocument()
-        );
-
-        const res = mockResponse();
-        await updateMembership(
-            mockRequest({ endDate: "2020-01-01" }),
-            res
-        );
-
-        expect(res.status).toHaveBeenCalledWith(400);
-        expect(res.json).toHaveBeenCalledWith({
-            message: "End date must be after start date",
-        });
-    });
-
-    test("Successfully updates membership type", async () => {
-        const membership = membershipDocument();
-        Membership.findOne.mockResolvedValue(membership);
-
-        const res = mockResponse();
-        await updateMembership(
-            mockRequest({ membershipType: "premium" }),
-            res
-        );
-
-        expect(membership.membershipType).toBe("premium");
-        expect(membership.save).toHaveBeenCalledTimes(1);
-        expect(res.status).toHaveBeenCalledWith(200);
-        expect(res.json).toHaveBeenCalledWith({
-            message: "Membership updated successfully",
-            membership,
-        });
-    });
+            expect(res.status).toHaveBeenCalledWith(403);
+            expect(res.json).toHaveBeenCalledWith({
+                message: blockedMessage,
+            });
+        }
+    );
 });
+
 
 describe("Membership controller - deleteMembership", () => {
     test("Rejects invalid membership ID", async () => {
