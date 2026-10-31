@@ -623,3 +623,325 @@ describe("Payment controller - getRevenueSummary", () => {
         });
     });
 });
+
+
+
+describe("Payment controller - security and edge cases", () => {
+    let session;
+
+    beforeEach(() => {
+        session = {
+            withTransaction: jest.fn(async callback => {
+                await callback();
+            }),
+            endSession: jest.fn().mockResolvedValue(undefined),
+        };
+
+        jest.spyOn(mongoose, "startSession")
+            .mockResolvedValue(session);
+
+        jest.spyOn(console, "error")
+            .mockImplementation(() => {});
+    });
+
+    afterEach(() => {
+        jest.restoreAllMocks();
+    });
+
+    function setupRenewal(overrides = {}, membershipOverrides = {}) {
+        const plan = membershipPlans.basic;
+
+        const payment = paymentDocument({
+            purpose: "renewal",
+            renewalMonths: 3,
+            amount: plan.monthlyPrice * 3,
+            currency: plan.currency,
+            status: "paid",
+            ...overrides,
+        });
+
+        const membership = {
+            ...membershipDocument(),
+            ...membershipOverrides,
+        };
+
+        Payment.findOneAndUpdate.mockResolvedValue(payment);
+
+        Membership.findById.mockReturnValue({
+            session: jest.fn().mockResolvedValue(membership),
+        });
+
+        return { payment, membership };
+    }
+
+    test("Rejects renewal when payment owner differs from membership owner", async () => {
+        const { payment, membership } = setupRenewal({
+            member: "507f1f77bcf86cd799439099",
+        });
+
+        const res = mockResponse();
+
+        await updatePaymentStatus(
+            mockRequest({ status: "paid" }),
+            res
+        );
+
+        expect(res.status).toHaveBeenCalledWith(400);
+        expect(res.json).toHaveBeenCalledWith({
+            message: "Renewal payment member does not match membership owner",
+        });
+        expect(membership.save).not.toHaveBeenCalled();
+        expect(payment.save).not.toHaveBeenCalled();
+    });
+
+    test("Rejects renewal with incorrect payment amount", async () => {
+        const { payment, membership } = setupRenewal({
+            amount: 1,
+        });
+
+        const res = mockResponse();
+
+        await updatePaymentStatus(
+            mockRequest({ status: "paid" }),
+            res
+        );
+
+        expect(res.status).toHaveBeenCalledWith(400);
+        expect(res.json).toHaveBeenCalledWith({
+            message: "Renewal payment amount or currency does not match the membership plan",
+        });
+        expect(membership.save).not.toHaveBeenCalled();
+        expect(payment.save).not.toHaveBeenCalled();
+    });
+
+    test("Rejects renewal with incorrect currency", async () => {
+        const { membership } = setupRenewal({
+            currency: "INVALID",
+        });
+
+        const res = mockResponse();
+
+        await updatePaymentStatus(
+            mockRequest({ status: "paid" }),
+            res
+        );
+
+        expect(res.status).toHaveBeenCalledWith(400);
+        expect(membership.save).not.toHaveBeenCalled();
+    });
+
+    test("Rejects renewal with unknown membership plan", async () => {
+        const { membership } = setupRenewal(
+            {},
+            { membershipType: "unknown" }
+        );
+
+        const res = mockResponse();
+
+        await updatePaymentStatus(
+            mockRequest({ status: "paid" }),
+            res
+        );
+
+        expect(res.status).toHaveBeenCalledWith(400);
+        expect(res.json).toHaveBeenCalledWith({
+            message: "Invalid membership plan",
+        });
+        expect(membership.save).not.toHaveBeenCalled();
+    });
+
+    test("Failed renewal payment does not extend membership", async () => {
+        const payment = paymentDocument({
+            purpose: "renewal",
+            renewalMonths: 3,
+            status: "failed",
+        });
+
+        Payment.findOneAndUpdate.mockResolvedValue(payment);
+
+        const res = mockResponse();
+
+        await updatePaymentStatus(
+            mockRequest({ status: "failed" }),
+            res
+        );
+
+        expect(res.status).toHaveBeenCalledWith(200);
+        expect(Membership.findById).not.toHaveBeenCalled();
+        expect(payment.save).not.toHaveBeenCalled();
+    });
+
+    test("Rejects already finalized payment without modifying membership", async () => {
+        Payment.findOneAndUpdate.mockResolvedValue(null);
+
+        const res = mockResponse();
+
+        await updatePaymentStatus(
+            mockRequest({ status: "paid" }),
+            res
+        );
+
+        expect(res.status).toHaveBeenCalledWith(400);
+        expect(Membership.findById).not.toHaveBeenCalled();
+        expect(session.endSession).toHaveBeenCalledTimes(1);
+    });
+
+    test("Returns server error when payment update fails", async () => {
+        Payment.findOneAndUpdate.mockRejectedValue(
+            new Error("Database failure")
+        );
+
+        const res = mockResponse();
+
+        await updatePaymentStatus(
+            mockRequest({ status: "paid" }),
+            res
+        );
+
+        expect(res.status).toHaveBeenCalledWith(500);
+        expect(res.json).toHaveBeenCalledWith({
+            message: "Server error",
+        });
+        expect(session.endSession).toHaveBeenCalledTimes(1);
+    });
+
+    test("Returns server error when membership save fails", async () => {
+        const { membership } = setupRenewal();
+
+        membership.save.mockRejectedValue(
+            new Error("Membership save failed")
+        );
+
+        const res = mockResponse();
+
+        await updatePaymentStatus(
+            mockRequest({ status: "paid" }),
+            res
+        );
+
+        expect(res.status).toHaveBeenCalledWith(500);
+        expect(session.endSession).toHaveBeenCalledTimes(1);
+    });
+
+    test("Returns server error when payment save fails", async () => {
+        const { payment } = setupRenewal();
+
+        payment.save.mockRejectedValue(
+            new Error("Payment save failed")
+        );
+
+        const res = mockResponse();
+
+        await updatePaymentStatus(
+            mockRequest({ status: "paid" }),
+            res
+        );
+
+        expect(res.status).toHaveBeenCalledWith(500);
+        expect(session.endSession).toHaveBeenCalledTimes(1);
+    });
+
+    test("Rejects fractional renewal months", async () => {
+        const { membership } = setupRenewal({
+            renewalMonths: 2.5,
+        });
+
+        const res = mockResponse();
+
+        await updatePaymentStatus(
+            mockRequest({ status: "paid" }),
+            res
+        );
+
+        expect(res.status).toHaveBeenCalledWith(400);
+        expect(res.json).toHaveBeenCalledWith({
+            message: "Invalid renewal months",
+        });
+        expect(membership.save).not.toHaveBeenCalled();
+    });
+
+    test("Rejects renewal months greater than 12", async () => {
+        const { membership } = setupRenewal({
+            renewalMonths: 13,
+        });
+
+        const res = mockResponse();
+
+        await updatePaymentStatus(
+            mockRequest({ status: "paid" }),
+            res
+        );
+
+        expect(res.status).toHaveBeenCalledWith(400);
+        expect(membership.save).not.toHaveBeenCalled();
+    });
+
+    test("Returns server error when payment creation fails", async () => {
+        Membership.findById.mockResolvedValue(
+            membershipDocument()
+        );
+
+        Payment.create.mockRejectedValue(
+            new Error("Database failure")
+        );
+
+        const res = mockResponse();
+
+        await createPayment(
+            mockRequest(validPaymentBody()),
+            res
+        );
+
+        expect(res.status).toHaveBeenCalledWith(500);
+        expect(res.json).toHaveBeenCalledWith({
+            message: "Server error",
+        });
+    });
+
+    test("Returns server error when payment lookup fails", async () => {
+        Payment.findById.mockReturnValue({
+            populate: jest.fn().mockReturnValue({
+                populate: jest.fn().mockRejectedValue(
+                    new Error("Database failure")
+                ),
+            }),
+        });
+
+        const res = mockResponse();
+
+        await getPaymentById(mockRequest(), res);
+
+        expect(res.status).toHaveBeenCalledWith(500);
+    });
+
+    test("Returns server error when payment history query fails", async () => {
+        Payment.find.mockReturnValue({
+            populate: jest.fn().mockReturnValue({
+                sort: jest.fn().mockRejectedValue(
+                    new Error("Database failure")
+                ),
+            }),
+        });
+
+        const res = mockResponse();
+
+        await getMyPayments(mockRequest(), res);
+
+        expect(res.status).toHaveBeenCalledWith(500);
+    });
+
+    test("Returns server error when revenue aggregation fails", async () => {
+        Payment.aggregate.mockRejectedValue(
+            new Error("Database failure")
+        );
+
+        const res = mockResponse();
+
+        await getRevenueSummary(mockRequest(), res);
+
+        expect(res.status).toHaveBeenCalledWith(500);
+        expect(res.json).toHaveBeenCalledWith({
+            message: "Server error",
+        });
+    });
+});
