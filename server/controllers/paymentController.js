@@ -220,7 +220,14 @@ const updatePaymentStatus = async (req, res) => {
                     payment.membership
                 ).session(session);
 
-                //Ensure the payment belongs to the membership owner
+                // Check that the membership exists
+                if (!membership) {
+                    const error = new Error("Membership not found");
+                    error.statusCode = 404;
+                    throw error;
+                }
+
+                // Ensure the payment belongs to the membership owner
                 if (payment.member.toString() !== membership.user.toString()) {
                     const error = new Error(
                         "Renewal payment member does not match membership owner"
@@ -229,14 +236,7 @@ const updatePaymentStatus = async (req, res) => {
                     throw error;
                 }
 
-                if(!membership) {
-                    const error = new Error(
-                        "Membership not found"
-                    );
-                    error.statusCode = 404;
-                    throw error;
-                }
-
+                // Prevent renewal of cancelled memberships
                 if(membership.status === "inactive") {
                     const error = new Error(
                         "Inactive membership cannot be renewed"
