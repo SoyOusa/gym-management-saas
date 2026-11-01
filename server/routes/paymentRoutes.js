@@ -19,7 +19,7 @@ const {
 router.post(
     "/",
     protect,
-    authorizeRoles("admin"),
+    authorizeRoles("member"),
     createPayment
 );
 

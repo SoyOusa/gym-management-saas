@@ -4,12 +4,14 @@ const mongoose = require("mongoose");
 jest.mock("../models/Payment", () => ({
     create: jest.fn(),
     find: jest.fn(),
+    findOne: jest.fn(),
     findById: jest.fn(),
     findOneAndUpdate: jest.fn(),
     aggregate: jest.fn(),
 }));
 
 jest.mock("../models/Membership", () => ({
+    findOne: jest.fn(),
     findById: jest.fn(),
 }));
 
@@ -48,7 +50,7 @@ function mockResponse() {
 function validPaymentBody() {
     return {
         membershipId,
-        amount: 50,
+        
         paymentMethod: "cash",
         transactionId: "TXN-001",
     };
@@ -59,7 +61,7 @@ function membershipDocument() {
         _id: membershipId,
         user: memberId,
         membershipType: "basic",
-        status: "active",
+        status: "pending",
         endDate: new Date("2099-01-01"),
         save: jest.fn().mockResolvedValue(undefined),
     };
@@ -73,7 +75,7 @@ function paymentDocument(overrides = {}) {
         amount: 50,
         paymentMethod: "cash",
         status: "pending",
-        purpose: "payment",
+        purpose: "membership",
         save: jest.fn().mockResolvedValue(undefined),
         ...overrides,
     };
@@ -96,7 +98,13 @@ beforeEach(() => {
     jest.resetAllMocks();
 });
 
+
 describe("Payment controller - createPayment", () => {
+    beforeEach(() => {
+        Membership.findOne.mockReset();
+        Payment.create.mockReset();
+    });
+
     test("Rejects missing required fields", async () => {
         const res = mockResponse();
 
@@ -104,7 +112,7 @@ describe("Payment controller - createPayment", () => {
 
         expect(res.status).toHaveBeenCalledWith(400);
         expect(res.json).toHaveBeenCalledWith({
-            message: "Membership ID, amount, and payment method are required",
+            message: "Membership ID and payment method are required",
         });
     });
 
@@ -122,23 +130,6 @@ describe("Payment controller - createPayment", () => {
         expect(res.status).toHaveBeenCalledWith(400);
         expect(res.json).toHaveBeenCalledWith({
             message: "Invalid membership ID",
-        });
-    });
-
-    test("Rejects non-positive payment amount", async () => {
-        const res = mockResponse();
-
-        await createPayment(
-            mockRequest({
-                ...validPaymentBody(),
-                amount: -10,
-            }),
-            res
-        );
-
-        expect(res.status).toHaveBeenCalledWith(400);
-        expect(res.json).toHaveBeenCalledWith({
-            message: "Amount must be a positive number",
         });
     });
 
@@ -160,13 +151,19 @@ describe("Payment controller - createPayment", () => {
     });
 
     test("Returns 404 when membership does not exist", async () => {
-        Membership.findById.mockResolvedValue(null);
+        Membership.findOne.mockResolvedValue(null);
 
         const res = mockResponse();
+
         await createPayment(
             mockRequest(validPaymentBody()),
             res
         );
+
+        expect(Membership.findOne).toHaveBeenCalledWith({
+            _id: membershipId,
+            user: memberId,
+        });
 
         expect(res.status).toHaveBeenCalledWith(404);
         expect(res.json).toHaveBeenCalledWith({
@@ -174,14 +171,15 @@ describe("Payment controller - createPayment", () => {
         });
     });
 
-    test("Successfully creates pending payment", async () => {
+    test("Successfully creates pending payment using server-side plan price", async () => {
         const membership = membershipDocument();
-        Membership.findById.mockResolvedValue(membership);
+        Membership.findOne.mockResolvedValue(membership);
 
         const payment = paymentDocument();
         Payment.create.mockResolvedValue(payment);
 
         const res = mockResponse();
+
         await createPayment(
             mockRequest(validPaymentBody()),
             res
@@ -190,7 +188,9 @@ describe("Payment controller - createPayment", () => {
         expect(Payment.create).toHaveBeenCalledWith({
             member: memberId,
             membership: membershipId,
-            amount: 50,
+            purpose: "membership",
+            amount: 30,
+            currency: "USD",
             paymentMethod: "cash",
             transactionId: "TXN-001",
             status: "pending",
@@ -202,7 +202,52 @@ describe("Payment controller - createPayment", () => {
             payment,
         });
     });
+
+    test("Rejects payment for a membership that is not pending", async () => {
+        const membership = {
+            ...membershipDocument(),
+            status: "active",
+        };
+
+        Membership.findOne.mockResolvedValue(membership);
+
+        const res = mockResponse();
+
+        await createPayment(
+            mockRequest(validPaymentBody()),
+            res
+        );
+
+        expect(Payment.create).not.toHaveBeenCalled();
+        expect(res.status).toHaveBeenCalledWith(400);
+        expect(res.json).toHaveBeenCalledWith({
+            message: "Only pending memberships can receive an initial payment",
+        });
+    });
+
+    test("Rejects membership with an unknown plan", async () => {
+        const membership = {
+            ...membershipDocument(),
+            membershipType: "unknown",
+        };
+
+        Membership.findOne.mockResolvedValue(membership);
+
+        const res = mockResponse();
+
+        await createPayment(
+            mockRequest(validPaymentBody()),
+            res
+        );
+
+        expect(Payment.create).not.toHaveBeenCalled();
+        expect(res.status).toHaveBeenCalledWith(400);
+        expect(res.json).toHaveBeenCalledWith({
+            message: "Invalid membership plan",
+        });
+    });
 });
+
 
 describe("Payment controller - getAllPayments", () => {
     test("Returns all payments with count", async () => {
@@ -350,11 +395,23 @@ describe("Payment controller - updatePaymentStatus", () => {
     test("Successfully marks pending payment as paid", async () => {
         const payment = paymentDocument({
             status: "paid",
+            purpose: "membership",
+            amount: membershipPlans.basic.monthlyPrice,
+            currency: membershipPlans.basic.currency,
+        });
+
+        const membership = membershipDocument({
+            status: "pending",
         });
 
         Payment.findOneAndUpdate.mockResolvedValue(payment);
 
+        Membership.findById.mockReturnValue({
+            session: jest.fn().mockResolvedValue(membership),
+        });
+
         const res = mockResponse();
+
         await updatePaymentStatus(
             mockRequest({ status: "paid" }),
             res
@@ -373,6 +430,9 @@ describe("Payment controller - updatePaymentStatus", () => {
                 session,
             }
         );
+
+        expect(membership.status).toBe("active");
+        expect(membership.save).toHaveBeenCalledWith({ session });
 
         expect(session.withTransaction).toHaveBeenCalledTimes(1);
         expect(session.endSession).toHaveBeenCalledTimes(1);
@@ -434,7 +494,11 @@ describe("Payment controller - updatePaymentStatus", () => {
                 status: "paid",
             })
         );
+        const membership = membershipDocument();
 
+        Membership.findById.mockReturnValue({
+            session: jest.fn().mockResolvedValue(membership),
+        });
         const res = mockResponse();
         await updatePaymentStatus(
             mockRequest({ status: "paid" }),
@@ -877,7 +941,7 @@ describe("Payment controller - security and edge cases", () => {
     });
 
     test("Returns server error when payment creation fails", async () => {
-        Membership.findById.mockResolvedValue(
+        Membership.findOne.mockResolvedValue(
             membershipDocument()
         );
 

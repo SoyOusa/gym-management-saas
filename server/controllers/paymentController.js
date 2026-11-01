@@ -2,27 +2,22 @@ const mongoose = require("mongoose");
 const Payment = require("../models/Payment");
 const Membership = require("../models/Membership");
 const calculateRenewalEndDate = require("../utils/membershipRenewal");
-const membershipPlan = require("../config/membershipPlans");
 const membershipPlans = require("../config/membershipPlans");
+
+
 
 const createPayment = async (req, res) => {
     try {
         const {
             membershipId,
-            amount,
             paymentMethod,
             transactionId,
         } = req.body || {};
 
         // Validate required fields
-        if (
-            !membershipId ||
-            amount === undefined ||
-            !paymentMethod
-        ) {
+        if (!membershipId || !paymentMethod) {
             return res.status(400).json({
-                message:
-                    "Membership ID, amount, and payment method are required",
+                message: "Membership ID and payment method are required",
             });
         }
 
@@ -30,17 +25,6 @@ const createPayment = async (req, res) => {
         if (!mongoose.Types.ObjectId.isValid(membershipId)) {
             return res.status(400).json({
                 message: "Invalid membership ID",
-            });
-        }
-
-        // Validate amount
-        if (
-            typeof amount !== "number" ||
-            !Number.isFinite(amount) ||
-            amount <= 0
-        ) {
-            return res.status(400).json({
-                message: "Amount must be a positive number",
             });
         }
 
@@ -57,8 +41,11 @@ const createPayment = async (req, res) => {
             });
         }
 
-        // Find membership
-        const membership = await Membership.findById(membershipId);
+        // Find membership belonging to the logged-in member
+        const membership = await Membership.findOne({
+            _id: membershipId,
+            user: req.user.id,
+        });
 
         if (!membership) {
             return res.status(404).json({
@@ -66,11 +53,29 @@ const createPayment = async (req, res) => {
             });
         }
 
+        // Only pending memberships can receive an initial payment
+        if (membership.status !== "pending") {
+            return res.status(400).json({
+                message: "Only pending memberships can receive an initial payment",
+            });
+        }
+
+        // Calculate the price on the server
+        const plan = membershipPlans[membership.membershipType];
+
+        if (!plan) {
+            return res.status(400).json({
+                message: "Invalid membership plan",
+            });
+        }
+
         // Create a pending payment
         const payment = await Payment.create({
             member: membership.user,
             membership: membership._id,
-            amount,
+            purpose: "membership",
+            amount: plan.monthlyPrice,
+            currency: plan.currency,
             paymentMethod,
             transactionId,
             status: "pending",
@@ -88,6 +93,7 @@ const createPayment = async (req, res) => {
         });
     }
 };
+
 
 // Admin: Get all payments
 const getAllPayments = async (req, res) => {
@@ -198,86 +204,117 @@ const updatePaymentStatus = async (req, res) => {
                 throw error;
             }
             
-            //Only paid renewal payments extend memberships.
+            // Apply membership changes only after payment is confirmed as paid.
+            if (status === "paid") {
 
-            if ( 
-                status === "paid" &&
-                payment.purpose === "renewal"
-            ) {
-                if (
-                    !Number.isInteger(payment.renewalMonths) ||
-                    payment.renewalMonths < 1 ||
-                    payment.renewalMonths > 12 
-                ) {
-                    const error = new Error(
-                        "Invalid renewal months"
-                    );
+                if (!["membership", "renewal"].includes(payment.purpose)) {
+                    const error = new Error("Invalid payment purpose");
                     error.statusCode = 400;
                     throw error;
-                }
+}
 
                 const membership = await Membership.findById(
                     payment.membership
                 ).session(session);
 
-                // Check that the membership exists
                 if (!membership) {
                     const error = new Error("Membership not found");
                     error.statusCode = 404;
                     throw error;
                 }
 
-                // Ensure the payment belongs to the membership owner
+                // Ensure the payment belongs to the membership owner.
                 if (payment.member.toString() !== membership.user.toString()) {
                     const error = new Error(
-                        "Renewal payment member does not match membership owner"
+                        payment.purpose === "renewal"
+                            ? "Renewal payment member does not match membership owner"
+                            : "Payment member does not match membership owner"
                     );
                     error.statusCode = 400;
                     throw error;
                 }
 
-                // Prevent renewal of cancelled memberships
-                if(membership.status === "inactive") {
-                    const error = new Error(
-                        "Inactive membership cannot be renewed"
-                    );
-                    error.statusCode = 400;
-                    throw error;
-                }
-
-                //Validate renewal payment against the membership plan 
+                // Verify the membership plan.
                 const plan = membershipPlans[membership.membershipType];
 
-                if(!plan) {
+                if (!plan) {
                     const error = new Error("Invalid membership plan");
                     error.statusCode = 400;
                     throw error;
                 }
 
-                const expectedAmount = plan.monthlyPrice * payment.renewalMonths;
+                // Handle initial membership payment.
+                if (payment.purpose === "membership") {
+                    if (membership.status !== "pending") {
+                        const error = new Error(
+                            "Only pending memberships can be activated by an initial payment"
+                        );
+                        error.statusCode = 400;
+                        throw error;
+                    }
 
-                if(
-                    payment.amount !== expectedAmount || 
-                    payment.currency !== plan.currency 
-                ) {
-                    const error = new Error(
-                        "Renewal payment amount or currency does not match the membership plan"
-                    );
-                    error.statusCode = 400;
-                    throw error;
+                    if (
+                        payment.amount !== plan.monthlyPrice ||
+                        payment.currency !== plan.currency
+                    ) {
+                        const error = new Error(
+                            "Membership payment amount or currency does not match the membership plan"
+                        );
+                        error.statusCode = 400;
+                        throw error;
+                    }
+
+                    membership.status = "active";
+
+                    await membership.save({ session });
                 }
 
-                membership.endDate = calculateRenewalEndDate(
-                    membership.endDate,
-                    payment.renewalMonths
-                );
+                // Handle renewal payment.
+                if (payment.purpose === "renewal") {
+                    if (
+                        !Number.isInteger(payment.renewalMonths) ||
+                        payment.renewalMonths < 1 ||
+                        payment.renewalMonths > 12
+                    ) {
+                        const error = new Error("Invalid renewal months");
+                        error.statusCode = 400;
+                        throw error;
+                    }
 
-                membership.status = "active";
+                    if (membership.status === "inactive") {
+                        const error = new Error(
+                            "Inactive membership cannot be renewed"
+                        );
+                        error.statusCode = 400;
+                        throw error;
+                    }
 
-                await membership.save({session});
+                    const expectedAmount =
+                        plan.monthlyPrice * payment.renewalMonths;
 
-                payment.renewalAppliedAt = new Date();
-                await payment.save({session});
+                    if (
+                        payment.amount !== expectedAmount ||
+                        payment.currency !== plan.currency
+                    ) {
+                        const error = new Error(
+                            "Renewal payment amount or currency does not match the membership plan"
+                        );
+                        error.statusCode = 400;
+                        throw error;
+                    }
+
+                    membership.endDate = calculateRenewalEndDate(
+                        membership.endDate,
+                        payment.renewalMonths
+                    );
+
+                    membership.status = "active";
+
+                    await membership.save({ session });
+
+                    payment.renewalAppliedAt = new Date();
+                    await payment.save({ session });
+                }
             }
             updatedPayment = payment;
 
