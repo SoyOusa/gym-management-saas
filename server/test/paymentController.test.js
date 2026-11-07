@@ -537,26 +537,24 @@ describe("Payment controller - updatePaymentStatus", () => {
     });
 
     test("Rejects renewal for inactive membership", async () => {
-        Payment.findOneAndUpdate.mockResolvedValue(
-            paymentDocument({
-                purpose: "renewal",
-                renewalMonths: 3,
-                status: "paid",
-            })
-        );
 
-        Membership.findById.mockReturnValue({
-            session: jest.fn().mockResolvedValue(
-                membershipDocument()
-            ),
+        const payment = paymentDocument({
+            purpose: "renewal",
+            renewalMonths: 3,
+            amount: membershipPlans.basic.monthlyPrice * 3,
+            currency: membershipPlans.basic.currency,
+            status: "paid",
         });
 
         const membership = membershipDocument();
         membership.status = "inactive";
 
+        Payment.findOneAndUpdate.mockResolvedValue(payment);
+
         Membership.findById.mockReturnValue({
             session: jest.fn().mockResolvedValue(membership),
         });
+
 
         const res = mockResponse();
         await updatePaymentStatus(
@@ -568,6 +566,11 @@ describe("Payment controller - updatePaymentStatus", () => {
         expect(res.json).toHaveBeenCalledWith({
             message: "Inactive membership cannot be renewed",
         });
+
+        expect(membership.status).toBe("inactive");
+        expect(membership.save).not.toHaveBeenCalled();
+        expect(payment.save).not.toHaveBeenCalled();
+        expect(session.endSession).toHaveBeenCalledTimes(1);
     });
 
     test("Successfully applies paid membership renewal", async () => {
