@@ -6,11 +6,13 @@ jest.mock("../models/Membership", () => ({
     find: jest.fn(),
     create: jest.fn(),
     deleteOne: jest.fn(),
+    
 }));
 
 jest.mock("../models/Payment", () => ({
     findOne: jest.fn(),
     create: jest.fn(),
+    exists: jest.fn(),
 }));
 
 const Membership = require("../models/Membership");
@@ -373,12 +375,20 @@ describe("Membership controller - deleteMembership", () => {
         Membership.findOne.mockResolvedValue(
             membershipDocument()
         );
+
+        //No payment records exist 
+        Payment.exists.mockResolvedValue(null);
+
         Membership.deleteOne.mockResolvedValue({
             deletedCount: 1,
         });
 
         const res = mockResponse();
         await deleteMembership(mockRequest(), res);
+
+        expect(Payment.exists).toHaveBeenCalledWith({
+            membership: membershipId,
+        })
 
         expect(Membership.deleteOne).toHaveBeenCalledWith({
             _id: membershipId,
@@ -387,6 +397,33 @@ describe("Membership controller - deleteMembership", () => {
         expect(res.status).toHaveBeenCalledWith(200);
         expect(res.json).toHaveBeenCalledWith({
             message: "Membership deleted successfully",
+        });
+    });
+
+    test("Prevents deletion when payment records exist", async () => {
+        Membership.findOne.mockResolvedValue(
+            membershipDocument()
+        );
+
+        Payment.exists.mockResolvedValue({
+            _id: "507f1f77bcf86cd799439099",
+        });
+
+        const res = mockResponse();
+
+        await deleteMembership(mockRequest(), res);
+
+        expect(Payment.exists).toHaveBeenCalledWith({
+            membership: membershipId,
+        });
+
+        expect(Membership.deleteOne).not.toHaveBeenCalled();
+
+        expect(res.status).toHaveBeenCalledWith(409);
+
+        expect(res.json).toHaveBeenCalledWith({
+            message:
+                "Membership cannot be deleted because payment records exist",
         });
     });
 });

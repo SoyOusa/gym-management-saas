@@ -162,6 +162,17 @@ const deleteMembership = async(req,res) =>{
                 message: "Membership not found"
             });
         }
+
+        //prevent deletion if any payment records exist
+        const existingPayment = await Payment.exists({
+            membership: membership._id,
+        });
+
+        if (existingPayment) {
+            return res.status(409).json({
+                message: "Membership cannot be deleted because payment records exist",
+            })
+        }
         await Membership.deleteOne({
             _id: req.params.id,
             user: req.user.id
