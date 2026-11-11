@@ -138,4 +138,57 @@ describe("Payment transaction integration tests", () => {
             originalEndDate.getTime()
         );
     });
+
+    test("Commits renewal payment and extends active membership", async () => {
+        // Create an active membership with a future end date.
+        testMembership.status = "active";
+        testMembership.endDate = new Date("2027-01-15T00:00:00.000Z");
+        await testMembership.save();
+
+        const originalEndDate = testMembership.endDate;
+
+        const req = {
+            params: {
+                id: testPayment._id.toString(),
+            },
+            body: {
+                status: "paid",
+            },
+        };
+
+        const res = mockResponse();
+
+        await updatePaymentStatus(req, res);
+
+        // Verify successful payment approval.
+        expect(res.status).toHaveBeenCalledWith(200);
+
+        expect(res.json).toHaveBeenCalledWith(
+            expect.objectContaining({
+                message: "Payment status updated successfully",
+            })
+        );
+
+        // Read fresh documents from MongoDB.
+        const savedPayment = await Payment.findById(testPayment._id);
+        const savedMembership = await Membership.findById(
+            testMembership._id
+        );
+
+        // Verify payment was committed.
+        expect(savedPayment.status).toBe("paid");
+        expect(savedPayment.paidAt).toBeInstanceOf(Date);
+        expect(savedPayment.renewalAppliedAt).toBeInstanceOf(Date);
+
+        // Verify membership was renewed.
+        expect(savedMembership.status).toBe("active");
+        expect(savedMembership.endDate.toISOString()).toBe(
+            "2027-04-15T00:00:00.000Z"
+        );
+
+        expect(savedMembership.endDate.getTime()).toBeGreaterThan(
+            originalEndDate.getTime()
+        );
+    });
+
 });
